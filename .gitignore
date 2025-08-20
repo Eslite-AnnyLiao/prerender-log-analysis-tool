@@ -1,0 +1,95 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# Environment variables
+.env
+.env.local
+.env.production
+.env.development
+
+# Logs
+logs/
+*.log
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+nyc_output/
+
+# Analysis Results (Generated Files)
+daily-analysis-result/
+daily-pod-analysis-result/
+performance-analyze-result/
+weekly_aggregated_results/
+slow-render-periods-log/
+
+# Data Files (CSV, JSON logs)
+to-analyze-daily-data/
+to-analyze-weekly-data/
+to-analyze-performance-data/
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Google Cloud credentials
+*.json
+!package.json
+!package-lock.json
+# Re-include specific config files if needed
+# !config/*.json
+
+# Authentication
+.gcloud/
+credentials/
+service-account-key.json
+
+# Backup files
+*.bak
+*.backup
+
+# Archive files
+*.zip
+*.tar.gz
+*.rar
+
+# Large data files
+*.csv
+*.xlsx
+*.xls
+
+# Debug files
+debug.log
+error.log
+
+# Build artifacts
+dist/
+build/
+out/

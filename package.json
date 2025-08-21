@@ -3,7 +3,14 @@
   "version": "1.0.0",
   "main": "analyze.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "setup": "bash setup-environment.sh",
+    "check-env": "node environment-check.js",
+    "query-logs": "bash query-daily-log.sh",
+    "analyze-daily": "bash daily-log-analysis-script.sh",
+    "cli": "node analysis-cli.js",
+    "guide": "node workflow-guide.js",
+    "start": "node analysis-cli.js"
   },
   "keywords": [],
   "author": "",

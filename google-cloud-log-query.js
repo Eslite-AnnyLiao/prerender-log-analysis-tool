@@ -209,7 +209,7 @@ class LogQueryProcessor {
     const defaultFilename = `prerender_logs_${dateString.replace(/-/g, '')}.csv`;
     const filename = this.outputFilename || defaultFilename;
     
-    const defaultDir = '/Users/liaoliting/Webserver/analysis-log';
+    const defaultDir = process.cwd();
     const outputDir = this.outputDir || defaultDir;
     
     // 確保輸出目錄存在

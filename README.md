@@ -1,6 +1,6 @@
 # Analysis Log - Prerender Server Performance Analysis Tool
 
-A comprehensive tool for analyzing prerender server logs from Google Cloud Logging, focusing on render performance, user-agent statistics, and request patterns analysis.
+A comprehensive tool for analyzing prerender server logs from Google Cloud Logging, focusing on render performance, user-agent statistics, and request patterns analysis. Features automatic Google Cloud authentication management for seamless operation.
 
 ## 概述
 
@@ -154,7 +154,7 @@ npm run cli results 20250821   # 查看特定日期結果
 2. **常見問題解決**
    - Node.js 版本過舊：更新到 14.0 以上
    - Google Cloud CLI 未安裝：按照上方安裝指南
-   - 認證失敗：執行 `gcloud auth application-default login`
+   - 認證問題：所有查詢工具都有自動認證檢查，會在需要時提示重新登入
    - 專案存取被拒：確認您有適當的 Google Cloud 專案權限
 
 3. **重新執行自動設置**
@@ -237,9 +237,12 @@ npm run cli results 20250821
 除了主要的每日流程外，還有以下特殊的分析工具：
 
 #### 🐌 慢渲染分析器
-用於分析特定日期的慢渲染狀況：
+用於分析特定日期的慢渲染狀況（具備自動認證檢查）：
 ```bash
-# 使用 shell script 執行慢渲染分析（建議）
+# 使用 CLI 命令（推薦）
+npm run cli performance 20250724 10
+
+# 使用 shell script 執行慢渲染分析
 ./slow-render-analysis-script.sh 20250724 10
 
 # 或者直接執行 JavaScript 檔案
@@ -474,7 +477,11 @@ A: **推薦方式**：`npm run setup` → `npm run guide`
    **快速方式**：`npm run setup` → `npm run cli run 20250821`
 
 ### Q: 出現認證錯誤怎麼辦？
-A: 執行 `npm run cli check` 檢查問題，或使用 `gcloud auth application-default login` 重新認證。確認您有適當的 Google Cloud 專案存取權限。
+A: 所有查詢工具都具備**自動認證檢查**功能：
+- 執行查詢前會自動檢查 Google Cloud 認證狀態
+- 認證過期（超過 24 小時）會自動提示重新登入
+- 手動重新認證：`gcloud auth application-default login`
+- 環境診斷：`npm run cli check`
 
 ### Q: 新的 CLI 工具和傳統腳本有什麼差別？
 A: 
@@ -538,6 +545,7 @@ A:
 - **智能狀態檢查** (`npm run cli status <date>`) - 隨時了解分析進度
 
 ### 🔧 增強功能
+- **自動認證檢查** - 查詢前自動檢查 Google Cloud 認證狀態
 - **彩色輸出和進度條** - 更好的視覺反饋
 - **智能參數驗證** - 防止常見輸入錯誤
 - **自動環境檢查** - 自動診斷和修復環境問題

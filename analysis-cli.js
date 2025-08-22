@@ -57,6 +57,44 @@ function formatDate(dateStr) {
 }
 
 /**
+ * Check and refresh Google Cloud credentials
+ */
+function checkAndRefreshGCloudAuth() {
+    const os = require('os');
+    const credentialsPath = path.join(os.homedir(), '.config', 'gcloud', 'application_default_credentials.json');
+    
+    try {
+        // Refresh Google Cloud credentials (once per day)
+        if (!fs.existsSync(credentialsPath) || isFileOlderThanOneDay(credentialsPath)) {
+            log.warning('Google Cloud 認證已過期或不存在，正在重新認證...');
+            execSync('gcloud auth application-default login', { stdio: 'inherit' });
+            log.success('Google Cloud 認證完成');
+        } else {
+            log.info('Google Cloud 認證有效 (不到 24 小時)');
+        }
+    } catch (error) {
+        log.error('Google Cloud 認證失敗');
+        log.info('請手動執行: gcloud auth application-default login');
+        process.exit(1);
+    }
+}
+
+/**
+ * Check if file is older than one day
+ */
+function isFileOlderThanOneDay(filePath) {
+    try {
+        const stats = fs.statSync(filePath);
+        const now = new Date();
+        const fileTime = new Date(stats.mtime);
+        const hoursDiff = (now - fileTime) / (1000 * 60 * 60);
+        return hoursDiff > 24;
+    } catch (error) {
+        return true; // If we can't read the file, consider it as needing refresh
+    }
+}
+
+/**
  * Execute shell command with proper error handling
  */
 function executeCommand(command, description) {
@@ -128,6 +166,9 @@ function createProgram() {
                 process.exit(1);
             }
             
+            // Check Google Cloud authentication before querying
+            checkAndRefreshGCloudAuth();
+            
             log.title(`🔍 Querying logs for ${formatDate(date)}...`);
             
             const script = options.enhanced ? 'enhanced-query-daily-log.sh' : 'query-daily-log.sh';
@@ -194,6 +235,9 @@ function createProgram() {
                 process.exit(1);
             }
             
+            // Check Google Cloud authentication before workflow
+            checkAndRefreshGCloudAuth();
+            
             log.title(`🚀 Running complete workflow for ${formatDate(date)}...`);
             
             // Step 1: Query logs
@@ -236,6 +280,9 @@ function createProgram() {
                 log.error('日期格式錯誤！請使用 YYYYMMDD 格式');
                 process.exit(1);
             }
+            
+            // Check Google Cloud authentication before performance analysis
+            checkAndRefreshGCloudAuth();
             
             log.title(`🐌 Running performance analysis for ${formatDate(date)}...`);
             executeCommand(`bash slow-render-analysis-script.sh ${date} ${count}`, `慢渲染分析 (${count} 筆)`);

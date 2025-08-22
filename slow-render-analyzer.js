@@ -189,13 +189,48 @@ class SlowRenderAnalyzer {
     }
   }
 
+  checkAndRefreshGCloudAuth() {
+    const os = require('os');
+    const credentialsPath = path.join(os.homedir(), '.config', 'gcloud', 'application_default_credentials.json');
+    
+    // Refresh Google Cloud credentials (once per day)
+    if (!fs.existsSync(credentialsPath) || this.isFileOlderThanOneDay(credentialsPath)) {
+      console.log('🔄 Google Cloud 認證已過期或不存在，正在重新認證...');
+      try {
+        execSync('gcloud auth application-default login', { stdio: 'inherit' });
+        console.log('✅ Google Cloud 認證完成');
+      } catch (error) {
+        console.error('❌ Google Cloud 認證失敗');
+        process.exit(1);
+      }
+    } else {
+      console.log('✅ Google Cloud 認證有效 (不到 24 小時)');
+    }
+  }
+
+  isFileOlderThanOneDay(filePath) {
+    try {
+      const stats = fs.statSync(filePath);
+      const now = new Date();
+      const fileTime = new Date(stats.mtime);
+      const hoursDiff = (now - fileTime) / (1000 * 60 * 60);
+      return hoursDiff > 24;
+    } catch (error) {
+      return true; // If we can't read the file, consider it as needing refresh
+    }
+  }
+
   async run() {
     console.log('🚀 慢渲染日誌分析工具啟動');
     console.log('=' .repeat(50));
 
     const { dateStr, count } = this.parseArguments();
     
-    console.log(`📅 分析日期: ${dateStr}`);
+    // Check Google Cloud authentication before proceeding
+    console.log('\n🔐 檢查 Google Cloud 認證...');
+    this.checkAndRefreshGCloudAuth();
+    
+    console.log(`\n📅 分析日期: ${dateStr}`);
     console.log(`📊 分析筆數: ${count}`);
     console.log('-'.repeat(30));
 

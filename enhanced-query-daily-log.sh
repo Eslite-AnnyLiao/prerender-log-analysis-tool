@@ -143,10 +143,9 @@ check_credentials() {
     
     local credentials_file="$HOME/.config/gcloud/application_default_credentials.json"
     
-    if [ ! -f "$credentials_file" ]; then
-        print_warning "找不到 Google Cloud 認證檔案"
-        print_info "正在啟動認證流程..."
-        
+    # Refresh Google Cloud credentials (once per day)
+    if [ ! -f "$credentials_file" ] || [ $(find "$credentials_file" -mtime +1 2>/dev/null | wc -l) -gt 0 ]; then
+        print_warning "Google Cloud 認證已過期或不存在，正在重新認證..."
         if gcloud auth application-default login; then
             print_success "Google Cloud 認證完成"
         else
@@ -154,27 +153,7 @@ check_credentials() {
             return 1
         fi
     else
-        # Check if credentials are older than 24 hours
-        local file_age_hours=$((($(date +%s) - $(stat -f %m "$credentials_file" 2>/dev/null || stat -c %Y "$credentials_file" 2>/dev/null)) / 3600))
-        
-        if [ $file_age_hours -gt 24 ]; then
-            print_warning "認證檔案已超過 24 小時，建議更新"
-            read -p "是否要重新認證？ (y/N): " refresh_auth
-            
-            if [[ $refresh_auth =~ ^[Yy]$ ]]; then
-                print_info "正在重新認證..."
-                if gcloud auth application-default login; then
-                    print_success "Google Cloud 認證更新完成"
-                else
-                    print_error "Google Cloud 認證更新失敗"
-                    return 1
-                fi
-            else
-                print_info "使用現有認證 (已 $file_age_hours 小時)"
-            fi
-        else
-            print_success "Google Cloud 認證有效 (已 $file_age_hours 小時)"
-        fi
+        print_success "Google Cloud 認證有效 (不到 24 小時)"
     fi
     
     return 0

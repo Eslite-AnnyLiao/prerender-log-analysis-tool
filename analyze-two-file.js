@@ -983,13 +983,15 @@ async function main() {
 
         // 檢查命令列參數
         if (process.argv.length < 4) {
-            console.error('❌ 使用方式: node script.js <UserAgent檔案路徑> <RenderTime檔案路徑>');
+            console.error('❌ 使用方式: node script.js <UserAgent檔案路徑> <RenderTime檔案路徑> [資料夾名稱]');
             console.error('範例: node script.js logs-useragent-2025.csv logs-rendertime-2025.csv');
+            console.error('範例: node script.js logs-useragent-2025.csv logs-rendertime-2025.csv L2');
             return;
         }
 
         const userAgentFile = process.argv[2]; // User-Agent 檔案
         const renderTimeFile = process.argv[3]; // Render Time 檔案
+        const folderName = process.argv[4]; // 可選的資料夾名稱
 
         console.log(`📁 User-Agent 檔案: ${userAgentFile}`);
         console.log(`📁 Render Time 檔案: ${renderTimeFile}`);
@@ -1006,7 +1008,10 @@ async function main() {
         }
 
         // 確保 result 資料夾存在
-        const resultDir = 'daily-analysis-result';
+        let resultDir = 'daily-analysis-result';
+        if (folderName) {
+            resultDir = `daily-analysis-result/${folderName}`;
+        }
         if (!fs.existsSync(resultDir)) {
             fs.mkdirSync(resultDir, { recursive: true });
             console.log(`✅ 已建立 ${resultDir} 資料夾`);

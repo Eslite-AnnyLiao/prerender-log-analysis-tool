@@ -80,17 +80,40 @@ function formatDate(dateStr) {
 }
 
 /**
- * Check if data files exist for a date
+ * Check if data files exist for a date and optional folder
  */
-function checkDataFiles(date) {
-    const userAgentFile = `./to-analyze-daily-data/user-agent-log/user-agent-${date}.csv`;
-    const logsFile = `./to-analyze-daily-data/200-log/L2/logs-${date}.csv`;
+function checkDataFiles(date, folder = null) {
+    let userAgentFile, logsFile;
+    
+    if (folder) {
+        userAgentFile = `./to-analyze-daily-data/user-agent-log/${folder}/user-agent-${date}.csv`;
+        logsFile = `./to-analyze-daily-data/200-log/${folder}/logs-${date}.csv`;
+        
+        // Also check for URL-based filename pattern
+        if (fs.existsSync(`./to-analyze-daily-data/200-log/${folder}/`)) {
+            const urlPatternFiles = fs.readdirSync(`./to-analyze-daily-data/200-log/${folder}/`, { withFileTypes: true })
+                .filter(dirent => dirent.isFile() && dirent.name.includes(date) && dirent.name.endsWith('.csv'))
+                .map(dirent => dirent.name);
+            
+            if (urlPatternFiles.length > 0) {
+                // Use the first matching file for URL-based pattern
+                const basePattern = urlPatternFiles[0].replace('.csv', '');
+                logsFile = `./to-analyze-daily-data/200-log/${folder}/${basePattern}.csv`;
+                userAgentFile = `./to-analyze-daily-data/user-agent-log/${folder}/user-agent-${basePattern}.csv`;
+            }
+        }
+    } else {
+        // Traditional format without folder
+        userAgentFile = `./to-analyze-daily-data/user-agent-log/user-agent-${date}.csv`;
+        logsFile = `./to-analyze-daily-data/200-log/logs-${date}.csv`;
+    }
     
     return {
         userAgent: fs.existsSync(userAgentFile),
         logs: fs.existsSync(logsFile),
         userAgentPath: userAgentFile,
-        logsPath: logsFile
+        logsPath: logsFile,
+        folder: folder
     };
 }
 
@@ -129,13 +152,42 @@ async function guideDateSelection(rl) {
 }
 
 /**
+ * Guide user through URL and folder selection
+ */
+async function guideURLSelection(rl) {
+    console.log('\n請輸入要查詢的 URL (必須以 http:// 或 https:// 開頭)');
+    console.log('例如: https://www.eslite.com/category/2/');
+    
+    while (true) {
+        const url = await askQuestion(rl, '\n🔗 請輸入 URL: ');
+        
+        if (url.match(/^https?:\/\/.+/)) {
+            return url;
+        } else {
+            log.error('URL 格式錯誤！必須以 http:// 或 https:// 開頭');
+        }
+    }
+}
+
+/**
  * Guide user through data querying
  */
 async function guideDataQuerying(rl, date) {
     log.step(2, '查詢日誌數據');
     
+    // Get URL for querying
+    const url = await guideURLSelection(rl);
+    
+    // Ask for optional folder
+    console.log('\n您可以指定資料夾名稱 (可選)');
+    console.log('如果不指定，系統會根據 URL 自動生成資料夾名稱');
+    console.log('例如: category/2 → L2, category/1 → L1');
+    
+    const folder = await askQuestion(rl, '\n📁 資料夾名稱 (按 Enter 跳過): ');
+    const folderParam = folder.trim() || null;
+    
     // Check if data already exists
-    const dataStatus = checkDataFiles(date);
+    const dataStatus = checkDataFiles(date, folderParam);
     
     if (dataStatus.userAgent && dataStatus.logs) {
         log.info('✅ 數據檔案已存在:');
@@ -145,11 +197,17 @@ async function guideDataQuerying(rl, date) {
         const requery = await askQuestion(rl, '\n🔄 是否重新查詢數據？ (y/N): ');
         if (requery.toLowerCase() !== 'y' && requery.toLowerCase() !== 'yes') {
             log.info('跳過數據查詢，使用現有數據');
-            return true;
+            return { success: true, folder: folderParam };
         }
     }
     
     console.log(`\n🔍 準備查詢 ${formatDate(date)} 的日誌數據...`);
+    console.log(`URL: ${url}`);
+    if (folderParam) {
+        console.log(`資料夾: ${folderParam}`);
+    } else {
+        console.log('資料夾: 系統自動生成');
+    }
     console.log('這個過程包含兩個步驟:');
     console.log('  1. 查詢 HTTP 200 回應日誌');
     console.log('  2. 查詢 User-Agent 日誌');
@@ -158,14 +216,17 @@ async function guideDataQuerying(rl, date) {
     const proceed = await askQuestion(rl, '\n▶️  開始查詢？ (Y/n): ');
     if (proceed.toLowerCase() === 'n' || proceed.toLowerCase() === 'no') {
         log.warning('用戶取消了數據查詢');
-        return false;
+        return { success: false };
     }
     
     try {
         log.info('執行查詢命令...');
-        execSync(`./query-daily-log.sh ${date}`, { stdio: 'inherit' });
+        const command = folderParam 
+            ? `./query-daily-log.sh ${date} "${url}" "${folderParam}"`
+            : `./query-daily-log.sh ${date} "${url}"`;
+        execSync(command, { stdio: 'inherit' });
         log.success('數據查詢完成！');
-        return true;
+        return { success: true, folder: folderParam };
     } catch (error) {
         log.error('數據查詢失敗！');
         console.log('\n常見解決方法:');
@@ -173,18 +234,18 @@ async function guideDataQuerying(rl, date) {
         console.log('2. 確認網路連接');
         console.log('3. 檢查專案權限');
         console.log('4. 執行環境檢查: npm run check-env');
-        return false;
+        return { success: false };
     }
 }
 
 /**
  * Guide user through data analysis
  */
-async function guideDataAnalysis(rl, date) {
+async function guideDataAnalysis(rl, date, folder = null) {
     log.step(3, '分析數據');
     
     // Verify data files exist
-    const dataStatus = checkDataFiles(date);
+    const dataStatus = checkDataFiles(date, folder);
     
     if (!dataStatus.userAgent || !dataStatus.logs) {
         log.error('缺少必要的數據檔案:');
@@ -200,6 +261,9 @@ async function guideDataAnalysis(rl, date) {
     console.log(`   ✅ ${dataStatus.logsPath}`);
     
     console.log(`\n📊 準備分析 ${formatDate(date)} 的數據...`);
+    if (folder) {
+        console.log(`資料夾: ${folder}`);
+    }
     console.log('分析過程包含:');
     console.log('  - 渲染時間統計分析');
     console.log('  - User-Agent 分佈分析');  
@@ -214,7 +278,10 @@ async function guideDataAnalysis(rl, date) {
     
     try {
         log.info('執行分析命令...');
-        execSync(`./daily-log-analysis-script.sh "${date} ~ ${date}"`, { stdio: 'inherit' });
+        const command = folder 
+            ? `./daily-log-analysis-script.sh "${date} ~ ${date}" "" "${folder}"`
+            : `./daily-log-analysis-script.sh "${date} ~ ${date}"`;
+        execSync(command, { stdio: 'inherit' });
         log.success('數據分析完成！');
         return true;
     } catch (error) {
@@ -230,19 +297,63 @@ async function guideDataAnalysis(rl, date) {
 /**
  * Show analysis results
  */
-async function showResults(rl, date) {
+async function showResults(rl, date, folder = null) {
     log.step(4, '檢視結果');
     
-    const resultDirs = [
+    let resultDirs = [
         './daily-analysis-result',
         './daily-pod-analysis-result'
     ];
     
-    console.log(`\n📈 ${formatDate(date)} 的分析結果:`);
+    // 如果指定了資料夾，更新路徑
+    if (folder) {
+        resultDirs = [
+            `./daily-analysis-result/${folder}`,
+            `./daily-pod-analysis-result/${folder}`
+        ];
+    }
     
-    for (const dir of resultDirs) {
+    console.log(`\n📈 ${formatDate(date)} 的分析結果${folder ? ` (資料夾: ${folder})` : ''}:`);
+    
+    // 檢查資料夾和根目錄
+    const allResultDirs = folder ? [
+        ...resultDirs,
+        './daily-analysis-result',
+        './daily-pod-analysis-result'
+    ] : resultDirs;
+    
+    let foundFiles = false;
+    for (const dir of allResultDirs) {
         if (fs.existsSync(dir)) {
-            const files = fs.readdirSync(dir).filter(file => file.includes(date));
+            let files = [];
+            
+            if (fs.lstatSync(dir).isDirectory()) {
+                // 直接檢查目錄中的檔案
+                files = fs.readdirSync(dir).filter(file => file.includes(date));
+            }
+            
+            // 如果是根目錄，也檢查子資料夾
+            if (!folder && fs.existsSync(dir)) {
+                const subdirs = fs.readdirSync(dir, { withFileTypes: true })
+                    .filter(dirent => dirent.isDirectory())
+                    .map(dirent => dirent.name);
+                    
+                for (const subdir of subdirs) {
+                    const subdirPath = path.join(dir, subdir);
+                    const subdirFiles = fs.readdirSync(subdirPath).filter(file => file.includes(date));
+                    if (subdirFiles.length > 0) {
+                        console.log(`\n📁 ${dir}/${subdir}:`);
+                        subdirFiles.forEach(file => {
+                            const filePath = path.join(subdirPath, file);
+                            const stats = fs.statSync(filePath);
+                            const size = (stats.size / 1024).toFixed(1);
+                            console.log(`   📄 ${file} (${size} KB)`);
+                            foundFiles = true;
+                        });
+                    }
+                }
+            }
+            
             if (files.length > 0) {
                 console.log(`\n📁 ${dir}:`);
                 files.forEach(file => {
@@ -250,17 +361,29 @@ async function showResults(rl, date) {
                     const stats = fs.statSync(filePath);
                     const size = (stats.size / 1024).toFixed(1);
                     console.log(`   📄 ${file} (${size} KB)`);
+                    foundFiles = true;
                 });
             }
         }
     }
     
+    if (!foundFiles) {
+        console.log('ℹ️ 未找到相關的分析結果檔案');
+    }
+    
     const viewResults = await askQuestion(rl, '\n👀 要查看詳細結果嗎？ (Y/n): ');
     if (viewResults.toLowerCase() !== 'n' && viewResults.toLowerCase() !== 'no') {
         console.log('\n💡 建議的查看方式:');
-        console.log('1. JSON 格式 (程式讀取): cat daily-analysis-result/*' + date + '*.json');
-        console.log('2. 文字報告 (人類閱讀): cat daily-analysis-result/*' + date + '*.txt');
-        console.log('3. Pod 分析報告: cat daily-pod-analysis-result/*' + date + '*.txt');
+        if (folder) {
+            console.log(`1. JSON 格式: cat daily-analysis-result/${folder}/*${date}*.json`);
+            console.log(`2. 文字報告: cat daily-analysis-result/${folder}/*${date}*.txt`);
+            console.log(`3. Pod 分析: cat daily-pod-analysis-result/${folder}/*${date}*.txt`);
+        } else {
+            console.log('1. JSON 格式: cat daily-analysis-result/*' + date + '*.json');
+            console.log('2. 文字報告: cat daily-analysis-result/*' + date + '*.txt');
+            console.log('3. Pod 分析: cat daily-pod-analysis-result/*' + date + '*.txt');
+            console.log('4. 資料夾結果: cat daily-analysis-result/*/' + date + '*');
+        }
     }
     
     return true;
@@ -368,8 +491,8 @@ async function main() {
             const selectedDate = await guideDateSelection(rl);
             
             // Step 2: Data querying
-            const querySuccess = await guideDataQuerying(rl, selectedDate);
-            if (!querySuccess) {
+            const queryResult = await guideDataQuerying(rl, selectedDate);
+            if (!queryResult.success) {
                 const retry = await askQuestion(rl, '\n🔄 是否重試？ (Y/n): ');
                 if (retry.toLowerCase() === 'n' || retry.toLowerCase() === 'no') {
                     break;
@@ -378,7 +501,7 @@ async function main() {
             }
             
             // Step 3: Data analysis
-            const analysisSuccess = await guideDataAnalysis(rl, selectedDate);
+            const analysisSuccess = await guideDataAnalysis(rl, selectedDate, queryResult.folder);
             if (!analysisSuccess) {
                 const retry = await askQuestion(rl, '\n🔄 是否重試？ (Y/n): ');
                 if (retry.toLowerCase() === 'n' || retry.toLowerCase() === 'no') {
@@ -388,7 +511,7 @@ async function main() {
             }
             
             // Step 4: Show results
-            await showResults(rl, selectedDate);
+            await showResults(rl, selectedDate, queryResult.folder);
             
             // Step 5: Next steps
             const nextAction = await offerNextSteps(rl, selectedDate);

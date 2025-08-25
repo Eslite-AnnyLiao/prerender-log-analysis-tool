@@ -1,15 +1,18 @@
 #!/bin/bash
 
 # 檢查參數數量
-if [ $# -ne 2 ]; then
-    echo "使用方法: $0 '開始日期 ~ 結束日期' 資料夾名稱"
+if [ $# -lt 2 ] || [ $# -gt 3 ]; then
+    echo "使用方法: $0 '開始日期 ~ 結束日期' 資料夾名稱 [URL資料夾]"
     echo "範例: $0 '20250724 ~ 20250730' week1"
+    echo "範例: $0 '20250724 ~ 20250730' week1 L1"
+    echo "範例: $0 '20250724 ~ 20250730' week1 L2"
     exit 1
 fi
 
 # 解析參數
 date_range="$1"
 folder_name="$2"
+url_folder="$3"
 
 # 提取開始和結束日期
 start_date=$(echo "$date_range" | awk '{print $1}')
@@ -18,6 +21,9 @@ end_date=$(echo "$date_range" | awk '{print $3}')
 echo "開始日期: $start_date"
 echo "結束日期: $end_date"
 echo "資料夾名稱: $folder_name"
+if [ -n "$url_folder" ]; then
+    echo "URL資料夾: $url_folder"
+fi
 
 # 驗證日期格式
 if [[ ! $start_date =~ ^[0-9]{8}$ ]] || [[ ! $end_date =~ ^[0-9]{8}$ ]]; then
@@ -81,7 +87,15 @@ echo ""
 echo "=== 步驟 1: 複製分析結果 ==="
 
 # 建立目標資料夾
-target_dir="./to-analyze-weekly-data/$folder_name"
+# 結構應為: to-analyze-weekly-data/week_${start_date}_${end_date}/${url_folder}
+base_folder_name="week_${start_date}_${end_date}"
+
+if [ -n "$url_folder" ]; then
+    target_dir="./to-analyze-weekly-data/$base_folder_name/$url_folder"
+else
+    target_dir="./to-analyze-weekly-data/$base_folder_name"
+fi
+
 if [ ! -d "$target_dir" ]; then
     mkdir -p "$target_dir"
     echo "建立資料夾: $target_dir"
@@ -89,11 +103,19 @@ fi
 
 copied_files=0
 for date in "${dates[@]}"; do
-    json_file="./daily-analysis-result/dual_user-agent-${date}_logs-${date}_analysis.json"
+    if [ -n "$url_folder" ]; then
+        # 新格式：L1/L2 資料夾結構
+        category_number="${url_folder: -1}" # 從 L1/L2 提取數字
+        json_file="./daily-analysis-result/$url_folder/dual_user-agent-log-${date}-category-${category_number}_log-${date}-category-${category_number}_analysis.json"
+    else
+        # 舊格式：根目錄檔案
+        json_file="./daily-analysis-result/dual_user-agent-${date}_logs-${date}_analysis.json"
+    fi
+    
     if [ -f "$json_file" ]; then
         cp "$json_file" "$target_dir/"
         if [ $? -eq 0 ]; then
-            echo "✓ 複製檔案: dual_user-agent-${date}_logs-${date}_analysis.json"
+            echo "✓ 複製檔案: $(basename "$json_file")"
             ((copied_files++))
         else
             echo "✗ 複製失敗: $json_file"
@@ -113,6 +135,11 @@ if [ $copied_files -gt 0 ]; then
     node week-report.js --dir "$target_dir"
     if [ $? -eq 0 ]; then
         echo "✓ 週報告生成完成"
+        if [ -n "$url_folder" ]; then
+            echo "ℹ️  週報結果已儲存在: ./weekly_aggregated_results/$url_folder/"
+        else
+            echo "ℹ️  週報結果已儲存在: ./weekly_aggregated_results/"
+        fi
     else
         echo "✗ 週報告生成失敗"
     fi

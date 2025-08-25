@@ -17,6 +17,7 @@ class SlowRenderAnalyzer {
 
     const dateStr = this.args[0];
     const count = parseInt(this.args[1]);
+    const folder = this.args[2]; // Optional folder parameter
 
     // Validate date format (YYYYMMDD)
     if (!/^\d{8}$/.test(dateStr)) {
@@ -29,7 +30,7 @@ class SlowRenderAnalyzer {
       process.exit(1);
     }
 
-    return { dateStr, count };
+    return { dateStr, count, folder };
   }
 
   formatDateForQuery(dateStr) {
@@ -40,8 +41,14 @@ class SlowRenderAnalyzer {
     return `${year}-${month}-${day}`;
   }
 
-  extractSlowRenderPeriods(dateStr, count) {
-    const inputFile = `./daily-analysis-result/dual_user-agent-${dateStr}_logs-${dateStr}_analysis.json`;
+  extractSlowRenderPeriods(dateStr, count, folder) {
+    let inputFile;
+    if (folder) {
+      const categoryNumber = folder.slice(-1); // Extract number from L1, L2, etc.
+      inputFile = `./daily-analysis-result/${folder}/dual_user-agent-log-${dateStr}-category-${categoryNumber}_log-${dateStr}-category-${categoryNumber}_analysis.json`;
+    } else {
+      inputFile = `./daily-analysis-result/dual_user-agent-${dateStr}_logs-${dateStr}_analysis.json`;
+    }
     
     // Check if input file exists
     if (!fs.existsSync(inputFile)) {
@@ -80,8 +87,22 @@ class SlowRenderAnalyzer {
     }
   }
 
-  saveProcessedData(dateStr, processedData) {
-    const outputFile = `./slow-render-periods-log/slow_render_periods_${dateStr}.json`;
+  saveProcessedData(dateStr, processedData, folder) {
+    let outputDir, outputFile;
+    
+    if (folder) {
+      outputDir = `./slow-render-periods-log/${folder}`;
+      outputFile = `${outputDir}/slow_render_periods_${dateStr}.json`;
+    } else {
+      outputDir = './slow-render-periods-log';
+      outputFile = `${outputDir}/slow_render_periods_${dateStr}.json`;
+    }
+    
+    // Ensure output directory exists
+    if (!fs.existsSync(outputDir)) {
+      console.log(`📁 建立輸出目錄: ${outputDir}`);
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
     
     try {
       fs.writeFileSync(outputFile, JSON.stringify(processedData, null, 2), 'utf8');
@@ -94,8 +115,14 @@ class SlowRenderAnalyzer {
     return outputFile;
   }
 
-  ensureOutputDirectory(dateStr) {
-    const outputDir = `./to-analyze-performance-data/${dateStr}`;
+  ensureOutputDirectory(dateStr, folder) {
+    let outputDir;
+    
+    if (folder) {
+      outputDir = `./to-analyze-performance-data/${dateStr}/${folder}`;
+    } else {
+      outputDir = `./to-analyze-performance-data/${dateStr}`;
+    }
     
     if (!fs.existsSync(outputDir)) {
       console.log(`📁 建立輸出目錄: ${outputDir}`);
@@ -132,7 +159,7 @@ class SlowRenderAnalyzer {
     }
   }
 
-  executePerformanceAnalyzer(outputDir) {
+  executePerformanceAnalyzer(outputDir, folder) {
     try {
       // Get all CSV files in the output directory
       const files = fs.readdirSync(outputDir);
@@ -146,8 +173,15 @@ class SlowRenderAnalyzer {
       console.log(`📊 找到 ${csvFiles.length} 個 CSV 檔案，開始執行效能分析`);
 
       // Process each CSV file
-      const dateStr = path.basename(outputDir); // Get date from output directory name
-      const resultDir = `./performance-analyze-result/${dateStr}`;
+      const pathParts = outputDir.split('/');
+      const dateStr = pathParts[pathParts.indexOf('to-analyze-performance-data') + 1];
+      
+      let resultDir;
+      if (folder) {
+        resultDir = `./performance-analyze-result/${dateStr}/${folder}`;
+      } else {
+        resultDir = `./performance-analyze-result/${dateStr}`;
+      }
       
       // Ensure result directory exists
       if (!fs.existsSync(resultDir)) {
@@ -224,7 +258,7 @@ class SlowRenderAnalyzer {
     console.log('🚀 慢渲染日誌分析工具啟動');
     console.log('=' .repeat(50));
 
-    const { dateStr, count } = this.parseArguments();
+    const { dateStr, count, folder } = this.parseArguments();
     
     // Check Google Cloud authentication before proceeding
     console.log('\n🔐 檢查 Google Cloud 認證...');
@@ -232,16 +266,19 @@ class SlowRenderAnalyzer {
     
     console.log(`\n📅 分析日期: ${dateStr}`);
     console.log(`📊 分析筆數: ${count}`);
+    if (folder) {
+      console.log(`📁 資料夾: ${folder}`);
+    }
     console.log('-'.repeat(30));
 
     // Step 1: Extract slow render periods and add IDs
-    const processedData = this.extractSlowRenderPeriods(dateStr, count);
+    const processedData = this.extractSlowRenderPeriods(dateStr, count, folder);
 
     // Step 2: Save processed data
-    const jsonFile = this.saveProcessedData(dateStr, processedData);
+    const jsonFile = this.saveProcessedData(dateStr, processedData, folder);
 
     // Step 3: Ensure output directory exists
-    const outputDir = this.ensureOutputDirectory(dateStr);
+    const outputDir = this.ensureOutputDirectory(dateStr, folder);
 
     // Step 4: Execute google-cloud-log-query for each record
     console.log('\n🔄 開始執行 Google Cloud 日誌查詢...');
@@ -260,32 +297,38 @@ class SlowRenderAnalyzer {
     }
 
     console.log('\n✨ 所有查詢已完成！');
-    console.log(`📁 結果檔案存放於: ${outputDir}`);
+    console.log(`📁 CSV 結果檔案存放於: ${outputDir}`);
     console.log(`📄 處理後的 JSON 檔案: ${jsonFile}`);
+    if (folder) {
+      console.log(`📂 資料夾分類: ${folder}`);
+    }
 
     // Step 5: Execute performance-analyzer.js automatically
     console.log('\n🔬 開始執行效能分析...');
     console.log('-'.repeat(50));
-    this.executePerformanceAnalyzer(outputDir);
+    this.executePerformanceAnalyzer(outputDir, folder);
   }
 
   showUsage() {
     console.log('\n📖 慢渲染日誌分析工具');
     console.log('=' .repeat(30));
     console.log('\n使用方法:');
-    console.log('  node slow-render-analyzer.js <日期> <分析筆數>');
+    console.log('  node slow-render-analyzer.js <日期> <分析筆數> [資料夾]');
     console.log('\n參數說明:');
     console.log('  日期        YYYYMMDD 格式 (例如: 20250819)');
     console.log('  分析筆數    要分析的記錄數量 (正整數)');
+    console.log('  資料夾      可選，指定要分析的資料夾 (L1, L2, 等)');
     console.log('\n範例:');
     console.log('  node slow-render-analyzer.js 20250819 10');
-    console.log('  node slow-render-analyzer.js 20250818 5');
+    console.log('  node slow-render-analyzer.js 20250818 5 L2');
+    console.log('  node slow-render-analyzer.js 20250820 15 L1');
     console.log('\n功能說明:');
-    console.log('  1. 從 dual_user-agent-{日期}_logs-{日期}_analysis.json 讀取慢渲染資料');
+    console.log('  1. 從 daily-analysis-result/[資料夾/]分析檔讀取慢渲染資料');
     console.log('  2. 取出指定筆數的記錄並加上 ID');
-    console.log('  3. 儲存為 slow_render_periods_{日期}.json');
+    console.log('  3. 儲存為 slow-render-periods-log/[資料夾/]slow_render_periods_{日期}.json');
     console.log('  4. 對每筆記錄執行 Google Cloud 日誌查詢');
-    console.log('  5. 結果存放在 ./to-analyze-performance-data/{日期}/ 目錄');
+    console.log('  5. 結果存放在 ./to-analyze-performance-data/{日期}/[資料夾/] 目錄');
+    console.log('  6. 效能分析結果存放在 ./performance-analyze-result/{日期}/[資料夾/] 目錄');
   }
 }
 

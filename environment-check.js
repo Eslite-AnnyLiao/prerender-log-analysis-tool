@@ -204,7 +204,7 @@ function checkDirectories() {
     log.info('Checking directory structure...');
     
     const requiredDirs = [
-        'to-analyze-daily-data/200-log/L2',
+        'to-analyze-daily-data/200-log',
         'to-analyze-daily-data/user-agent-log',
         'daily-analysis-result',
         'daily-pod-analysis-result',
@@ -330,8 +330,11 @@ function generateReport(allChecks) {
     if (allPassed) {
         log.success('🎉 Environment is ready! You can start using the analysis tools.');
         console.log('\nQuick start:');
-        console.log('1. ./query-daily-log.sh 20250821');
+        console.log('1. ./query-daily-log.sh 20250821 https://www.eslite.com/category/2/');
         console.log('2. ./daily-log-analysis-script.sh "20250821 ~ 20250821"');
+        console.log('\nWith folder parameters:');
+        console.log('1. ./query-daily-log.sh 20250821 https://www.eslite.com/category/2/ L2');
+        console.log('2. ./daily-log-analysis-script.sh "20250821 ~ 20250821" "" "L2"');
     } else {
         log.error('❌ Environment setup incomplete. Please address the issues above.');
         console.log('\nRecommended actions:');

@@ -53,6 +53,78 @@ show_progress() {
     echo
 }
 
+# Generate folder name from URL path
+generate_folder_from_url() {
+    local url=$1
+    
+    # Remove protocol (http:// or https://)
+    local path=$(echo "$url" | sed 's|^https*://||')
+    
+    # Remove domain name, keep only path
+    path=$(echo "$path" | sed 's|^[^/]*||')
+    
+    # Remove leading and trailing slashes
+    path=$(echo "$path" | sed 's|^/||' | sed 's|/$||')
+    
+    # Replace slashes with hyphens for folder name
+    path=$(echo "$path" | sed 's|/|-|g')
+    
+    # Special mapping for common paths
+    case "$path" in
+        "category-1") echo "L1" ;;
+        "category-2") echo "L2" ;;
+        "category-3") echo "L3" ;;
+        "category-4") echo "L4" ;;
+        "category-5") echo "L5" ;;
+        "") echo "root" ;;
+        *) echo "$path" ;;
+    esac
+}
+
+# Generate filename from URL
+generate_filename_from_url() {
+    local url=$1
+    local date=$2
+    
+    # Remove protocol (http:// or https://)
+    local path=$(echo "$url" | sed 's|^https*://||')
+    
+    # Remove domain name, keep only path
+    path=$(echo "$path" | sed 's|^[^/]*||')
+    
+    # Remove leading and trailing slashes
+    path=$(echo "$path" | sed 's|^/||' | sed 's|/$||')
+    
+    # Replace slashes with hyphens
+    path=$(echo "$path" | sed 's|/|-|g')
+    
+    # If path is empty, use 'root'
+    if [ -z "$path" ]; then
+        path="root"
+    fi
+    
+    echo "log-${date}-${path}"
+}
+
+# Validate URL format
+validate_url() {
+    local url=$1
+    
+    # Check if URL starts with http:// or https://
+    if [[ ! $url =~ ^https?:// ]]; then
+        print_error "URL 格式錯誤！必須以 http:// 或 https:// 開頭"
+        return 1
+    fi
+    
+    # Check if URL contains domain
+    if [[ ! $url =~ ^https?://[^/]+.*$ ]]; then
+        print_error "URL 格式錯誤！必須包含有效的域名"
+        return 1
+    fi
+    
+    return 0
+}
+
 # Validate date format
 validate_date() {
     local date=$1
@@ -89,23 +161,33 @@ validate_date() {
 
 # Show usage
 show_usage() {
-    echo "使用方法: $0 <date>"
+    echo "使用方法: $0 <date> <url> [folder]"
     echo ""
     echo "參數:"
     echo "  date    要查詢的日期 (格式: YYYYMMDD)"
+    echo "  url     要查詢的目標URL (必須以 http:// 或 https:// 開頭)"
+    echo "  folder  可選的資料夾名稱 (預設會根據URL自動生成)"
     echo ""
     echo "範例:"
-    echo "  $0 20250821     # 查詢 2025年8月21日 的日誌"
-    echo "  $0 20250820     # 查詢 2025年8月20日 的日誌"
+    echo "  $0 20250821 https://www.eslite.com/category/2/"
+    echo "  $0 20250821 https://www.eslite.com/category/2/ L2"
+    echo "  $0 20250820 https://example.com/products/ products"
     echo ""
     echo "說明:"
-    echo "  此腳本會查詢指定日期的兩種日誌:"
+    echo "  此腳本會查詢指定日期和URL的兩種日誌:"
     echo "  1. HTTP 200 回應日誌 (渲染時間數據)"
     echo "  2. User-Agent 日誌 (用戶代理數據)"
     echo ""
+    echo "資料夾自動映射:"
+    echo "  如果未指定資料夾，會按以下規則自動生成:"
+    echo "  - category/1 → L1"
+    echo "  - category/2 → L2"
+    echo "  - products/ → products"
+    echo "  - api/v1/users → api-v1-users"
+    echo ""
     echo "輸出檔案位置:"
-    echo "  - ./to-analyze-daily-data/200-log/L2/logs-<date>.csv"
-    echo "  - ./to-analyze-daily-data/user-agent-log/user-agent-<date>.csv"
+    echo "  - ./to-analyze-daily-data/200-log/[folder]/<filename>.csv"
+    echo "  - ./to-analyze-daily-data/user-agent-log/[folder]/user-agent-<filename>.csv"
 }
 
 # Check prerequisites
@@ -164,8 +246,8 @@ create_directories() {
     print_step 3 "準備輸出目錄"
     
     local dirs=(
-        "./to-analyze-daily-data/200-log/L2"
-        "./to-analyze-daily-data/user-agent-log"
+        "./to-analyze-daily-data/200-log/${folder_name}"
+        "./to-analyze-daily-data/user-agent-log/${folder_name}"
     )
     
     for dir in "${dirs[@]}"; do
@@ -224,7 +306,7 @@ main() {
     
     # Check arguments
     if [ $# -eq 0 ]; then
-        print_error "缺少日期參數"
+        print_error "缺少必要參數"
         echo
         show_usage
         exit 1
@@ -235,7 +317,16 @@ main() {
         exit 0
     fi
     
+    if [ $# -lt 2 ]; then
+        print_error "缺少URL參數"
+        echo
+        show_usage
+        exit 1
+    fi
+    
     local date=$1
+    local url=$2
+    local folder_name=$3  # 可選的資料夾參數
     
     # Validate date
     if ! validate_date "$date"; then
@@ -244,10 +335,31 @@ main() {
         exit 1
     fi
     
+    # Validate URL
+    if ! validate_url "$url"; then
+        echo
+        show_usage
+        exit 1
+    fi
+    
     # Convert YYYYMMDD to YYYY-MM-DD format for query
     local formatted_date="${date:0:4}-${date:4:2}-${date:6:2}"
     
+    # Determine folder name (use provided or auto-generate)
+    if [ -n "$folder_name" ]; then
+        print_info "使用指定資料夾: $folder_name"
+    else
+        folder_name=$(generate_folder_from_url "$url")
+        print_info "自動生成資料夾: $folder_name"
+    fi
+    
+    # Generate filename based on URL
+    local filename_base=$(generate_filename_from_url "$url" "$date")
+    
     print_info "查詢日期: $formatted_date ($date)"
+    print_info "查詢URL: $url"
+    print_info "資料夾: $folder_name"
+    print_info "檔名基礎: $filename_base"
     echo
     
     # Check prerequisites
@@ -276,12 +388,13 @@ main() {
     
     # First execution: 200-log analysis
     print_step "4.1" "查詢 HTTP 200 回應日誌"
+    local search_200="SEARCH(\"got 200 in ${url}\")"
     if ! execute_query \
         "HTTP 200 回應" \
-        "./to-analyze-daily-data/200-log/L2" \
-        "logs-${date}.csv" \
+        "./to-analyze-daily-data/200-log/${folder_name}" \
+        "${filename_base}.csv" \
         "$formatted_date" \
-        'SEARCH("got 200 in https://www.eslite.com/category/2/")'; then
+        "$search_200"; then
         exit 1
     fi
     
@@ -290,14 +403,15 @@ main() {
     show_progress 30
     echo
     
-    # Second execution: user-agent-log analysis
+    # Second execution: user-agent-log analysis  
     print_step "4.2" "查詢 User-Agent 日誌"
+    local search_ua="SEARCH(\"\`X-Original-User-Agent:\` \`${url}\`\")"
     if ! execute_query \
         "User-Agent" \
-        "./to-analyze-daily-data/user-agent-log" \
-        "user-agent-${date}.csv" \
+        "./to-analyze-daily-data/user-agent-log/${folder_name}" \
+        "user-agent-${filename_base}.csv" \
         "$formatted_date" \
-        'SEARCH("X-Original-User-Agent: https://www.eslite.com/category/2")'; then
+        "$search_ua"; then
         exit 1
     fi
     

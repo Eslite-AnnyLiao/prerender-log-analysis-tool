@@ -39,21 +39,54 @@ analysis-log/
 ├── pod-group-analyzer.js        # Pod群組分析器
 ├── slow-render-analyzer.js      # 慢渲染分析器
 ├── week-report.js              # 週報生成器
+├── analysis-cli.js             # 統一 CLI 介面
 ├── daily-log-analysis-script.sh # 每日日誌分析腳本
 ├── query-daily-log.sh          # 日誌查詢腳本
 ├── slow-render-analysis-script.sh # 慢渲染分析腳本
 ├── week-report-script.sh       # 週報腳本
 ├── google-cloud-log-query.js   # Google Cloud 日誌查詢
 ├── to-analyze-daily-data/       # 待分析每日數據
-│   ├── 200-log/L2/            # HTTP 200 回應日誌
-│   └── user-agent-log/        # User-Agent 日誌
+│   ├── 200-log/                # HTTP 200 回應日誌
+│   │   ├── L1/                 # category/1 數據
+│   │   ├── L2/                 # category/2 數據
+│   │   ├── products/           # products 數據
+│   │   └── [other-folders]/    # 其他URL路徑數據
+│   └── user-agent-log/         # User-Agent 日誌
+│       ├── L1/                 # category/1 User-Agent
+│       ├── L2/                 # category/2 User-Agent
+│       ├── products/           # products User-Agent
+│       └── [other-folders]/    # 其他URL路徑User-Agent
 ├── daily-analysis-result/      # 每日分析結果
+│   ├── L1/                     # L1 URL類別分析結果
+│   ├── L2/                     # L2 URL類別分析結果
+│   └── [other-folders]/        # 其他URL類別結果
 ├── daily-pod-analysis-result/  # Pod分析結果
+│   ├── L1/                     # L1 URL類別Pod結果
+│   ├── L2/                     # L2 URL類別Pod結果
+│   └── [other-folders]/        # 其他URL類別Pod結果
 ├── to-analyze-performance-data/ # 待分析效能數據
+│   └── YYYYMMDD/               # 日期資料夾
+│       ├── L1/                 # L1 URL類別效能數據
+│       ├── L2/                 # L2 URL類別效能數據
+│       └── [other-folders]/    # 其他URL類別效能數據
 ├── performance-analyze-result/ # 效能分析結果
+│   └── YYYYMMDD/               # 日期資料夾
+│       ├── L1/                 # L1 URL類別效能結果
+│       ├── L2/                 # L2 URL類別效能結果
+│       └── [other-folders]/    # 其他URL類別效能結果
 ├── weekly_aggregated_results/  # 週度彙總分析結果
+│   ├── L1/                     # L1 URL類別週報
+│   ├── L2/                     # L2 URL類別週報
+│   └── [other-folders]/        # 其他URL類別週報
 ├── to-analyze-weekly-data/      # 待分析週數據
+│   └── week_YYYYMMDD_YYYYMMDD/ # 週資料夾 (例: week_20250821_20250827)
+│       ├── L1/                 # L1 URL類別週數據
+│       ├── L2/                 # L2 URL類別週數據
+│       └── [other-folders]/    # 其他URL類別週數據
 └── slow-render-periods-log/    # 慢渲染時段記錄
+    ├── L1/                     # L1 URL類別慢渲染記錄
+    ├── L2/                     # L2 URL類別慢渲染記錄
+    └── [other-folders]/        # 其他URL類別慢渲染記錄
 ```
 
 ## 快速開始 (新手推薦)
@@ -69,8 +102,10 @@ npm run setup
 # 2. 互動式指南（推薦新手）
 npm run guide
 
-# 或者：一鍵完整分析
-npm run cli run 20250821
+# 或者：一鍵完整分析（自動資料夾映射）
+npm run cli run 20250821 https://www.eslite.com/category/2/
+# 或者：手動指定資料夾
+npm run cli run 20250821 https://www.eslite.com/category/2/ L2
 ```
 
 ### 🎯 統一命令介面 (進階用戶)
@@ -83,9 +118,11 @@ npm run cli setup              # 環境設置
 npm run cli check              # 環境檢查
 
 # 數據分析流程
-npm run cli query 20250821     # 查詢日誌
-npm run cli analyze -d 20250821 # 分析數據  
-npm run cli run 20250821       # 完整工作流程（查詢+分析）
+npm run cli query 20250821 https://example.com/         # 查詢日誌（自動資料夾映射）
+npm run cli query 20250821 https://example.com/ L2      # 查詢到指定資料夾
+npm run cli analyze -d 20250821                         # 分析數據  
+npm run cli run 20250821 https://example.com/           # 完整工作流程（查詢+分析）
+npm run cli run 20250821 https://example.com/ custom    # 指定資料夾的完整工作流程
 
 # 狀態和結果管理
 npm run cli status 20250821    # 檢查分析狀態
@@ -174,14 +211,14 @@ npm run guide
 
 #### 方式二：一鍵完整流程（效率最高）
 ```bash
-npm run cli run 20250821
+npm run cli run 20250821 https://www.eslite.com/category/2/
 ```
-自動完成查詢和分析的完整流程，適合日常使用。
+自動完成查詢和分析的完整流程，適合日常使用。現在支援**自訂URL查詢**，可以分析任何目標URL的性能數據。
 
 #### 方式三：分步驟執行（精確控制）
 ```bash
-# 步驟 1: 查詢日誌
-npm run cli query 20250821
+# 步驟 1: 查詢日誌（現在需要指定URL）
+npm run cli query 20250821 https://example.com/products/
 
 # 步驟 2: 分析數據
 npm run cli analyze -d 20250821
@@ -204,13 +241,16 @@ npm run cli check
 # 3. 開始使用（選擇其中一種方式）
 npm run guide                # 互動式指南
 # 或
-npm run cli run 20250821     # 一鍵完成
+npm run cli run 20250821 https://example.com/     # 一鍵完成
 ```
 
 #### 日常使用
 ```bash
-# 快速分析今天的數據
-npm run cli run 20250821
+# 快速分析今天的數據（指定要分析的URL）
+npm run cli run 20250821 https://www.eslite.com/category/2/
+
+# 分析不同URL的數據
+npm run cli run 20250821 https://example.com/api/v1/products/
 
 # 分析一週數據
 npm run cli analyze -r "20250821 ~ 20250827"
@@ -222,11 +262,19 @@ npm run cli results
 
 #### 進階分析
 ```bash
-# 慢渲染分析
+# 慢渲染分析 - 所有URL類別
 npm run cli performance 20250821 10
 
-# 週報生成
+# 慢渲染分析 - 特定URL類別
+npm run cli performance 20250821 10 L1
+npm run cli performance 20250821 5 L2
+
+# 週報生成 - 所有URL類別
 npm run cli weekly 20250821 20250827
+
+# 週報生成 - 特定URL類別
+npm run cli weekly 20250821 20250827 L1
+npm run cli weekly 20250821 20250827 L2
 
 # 查看特定日期的所有結果
 npm run cli results 20250821
@@ -239,21 +287,35 @@ npm run cli results 20250821
 #### 🐌 慢渲染分析器
 用於分析特定日期的慢渲染狀況（具備自動認證檢查）：
 ```bash
-# 使用 CLI 命令（推薦）
+# 使用 CLI 命令（推薦） - 分析所有URL類別
 npm run cli performance 20250724 10
+
+# 分析特定URL類別
+npm run cli performance 20250724 10 L1
+npm run cli performance 20250724 5 L2
 
 # 使用 shell script 執行慢渲染分析
 ./slow-render-analysis-script.sh 20250724 10
+./slow-render-analysis-script.sh 20250724 10 L1
 
 # 或者直接執行 JavaScript 檔案
 node slow-render-analyzer.js 20250724 10
+node slow-render-analyzer.js 20250724 10 L1
 ```
 
 #### 📈 週報分析工具
 用於產生週度資料分析報告：
 ```bash
-# 產生週報告
-./week-report-script.sh "20250724 ~ 20250730" week1
+# 使用 CLI 命令（推薦） - 生成所有URL類別的週報
+npm run cli weekly 20250821 20250827
+
+# 生成特定URL類別的週報
+npm run cli weekly 20250821 20250827 L1
+npm run cli weekly 20250821 20250827 L2
+
+# 直接使用 shell script
+./week-report-script.sh "20250821 ~ 20250827" week_20250821_20250827
+./week-report-script.sh "20250821 ~ 20250827" week_20250821_20250827 L1
 ```
 
 ---
@@ -278,10 +340,10 @@ npm run start         # 同 npm run cli
 
 #### 📊 數據分析
 ```bash
-npm run cli run <date>              # 完整工作流程（一鍵完成）
-npm run cli query <date>            # 查詢日誌
-npm run cli analyze -d <date>       # 分析單日數據
-npm run cli analyze -r "<range>"    # 分析日期範圍
+npm run cli run <date> <url>              # 完整工作流程（一鍵完成）
+npm run cli query <date> <url>            # 查詢日誌
+npm run cli analyze -d <date>             # 分析單日數據
+npm run cli analyze -r "<range>"          # 分析日期範圍
 ```
 
 #### 📈 進階功能
@@ -308,7 +370,11 @@ node analyze-two-file.js <UserAgent檔案> <RenderTime檔案>
 
 範例:
 ```bash
-node analyze-two-file.js to-analyze-daily-data/user-agent-log/user-agent-20250821.csv to-analyze-daily-data/200-log/L2/logs-20250821.csv
+# 傳統檔名格式
+node analyze-two-file.js to-analyze-daily-data/user-agent-log/user-agent-20250821.csv to-analyze-daily-data/200-log/logs-20250821.csv
+
+# 新的動態檔名格式（根據URL生成）
+node analyze-two-file.js to-analyze-daily-data/user-agent-log/user-agent-log-20250821-category-2.csv to-analyze-daily-data/200-log/log-20250821-category-2.csv
 ```
 
 #### 2. 效能分析
@@ -331,28 +397,41 @@ npm run analyze-daily "20250821 ~ 20250827"
 
 # 或直接執行腳本
 ./daily-log-analysis-script.sh "20250821 ~ 20250827"
+
+# 支援新的檔名格式（可選參數）
+./daily-log-analysis-script.sh "20250821 ~ 20250827" "log-20250821-category-2"
 ```
 
 #### 5. 慢渲染分析
 
 ```bash
-./slow-render-analysis-script.sh <日期> <分析筆數>
+./slow-render-analysis-script.sh <日期> <分析筆數> [URL資料夾]
 ```
 
 範例:
 ```bash
+# 分析所有URL類別的慢渲染數據
 ./slow-render-analysis-script.sh 20250821 10
+
+# 分析特定URL類別的慢渲染數據
+./slow-render-analysis-script.sh 20250821 10 L1
+./slow-render-analysis-script.sh 20250821 5 L2
 ```
 
 #### 6. 週報生成
 
 ```bash
-./week-report-script.sh <日期範圍> <資料夾名稱>
+./week-report-script.sh <日期範圍> <資料夾名稱> [URL資料夾]
 ```
 
 範例:
 ```bash
-./week-report-script.sh "20250821 ~ 20250827" week1
+# 生成所有URL類別的週報
+./week-report-script.sh "20250821 ~ 20250827" week_20250821_20250827
+
+# 生成特定URL類別的週報
+./week-report-script.sh "20250821 ~ 20250827" week_20250821_20250827 L1
+./week-report-script.sh "20250821 ~ 20250827" week_20250821_20250827 L2
 ```
 
 ## 輸出格式
@@ -474,7 +553,13 @@ User-Agent 分析結果:
 
 ### Q: 第一次使用該怎麼開始？
 A: **推薦方式**：`npm run setup` → `npm run guide`
-   **快速方式**：`npm run setup` → `npm run cli run 20250821`
+   **快速方式**：`npm run setup` → `npm run cli run 20250821 https://example.com/`
+   
+### Q: 新的URL參數是必需的嗎？
+A: 是的，從現在開始查詢命令需要同時提供日期和URL參數：
+   - `npm run cli query <date> <url>`
+   - `npm run cli run <date> <url>`
+   - URL必須以 `http://` 或 `https://` 開頭
 
 ### Q: 出現認證錯誤怎麼辦？
 A: 所有查詢工具都具備**自動認證檢查**功能：
@@ -501,13 +586,29 @@ A:
 A: 支援 macOS、Linux 和 Windows（需要 WSL 或 Git Bash）。
 
 ### Q: 如何分析日期範圍？
-A: 使用 `npm run cli analyze -r "20250821 ~ 20250827"` 分析指定日期範圍。
+A: 使用 `npm run cli analyze -r "20250821 ~ 20250827"` 分析指定日期範圍。也可以結合URL資料夾：`./daily-log-analysis-script.sh "20250821 ~ 20250827" "" "L1"`
 
 ### Q: 互動式指南和自動化命令哪個比較好？
 A: 
 - **新手或不確定操作**: 使用 `npm run guide` 互動式指南
 - **熟悉流程或自動化**: 使用 `npm run cli run <date>` 一鍵完成
 - **需要精確控制**: 使用分步驟命令（query → analyze → status）
+
+### Q: 如何使用新的URL分類資料夾系統？
+A: 新系統支援按URL類別組織數據：
+- **查詢特定URL類別**: `npm run cli query 20250825 https://example.com/category/1/ L1`
+- **分析特定URL類別**: `./daily-log-analysis-script.sh "20250825 ~ 20250825" "" "L1"`
+- **慢渲染分析**: `npm run cli performance 20250825 10 L1`
+- **週報生成**: `npm run cli weekly 20250821 20250827 L1`
+- **結果位置**: L1類別結果在 `daily-analysis-result/L1/`
+
+### Q: L1、L2等資料夾是怎麼決定的？
+A: 
+- **L1**: 對應 `category/1` URL路徑
+- **L2**: 對應 `category/2` URL路徑
+- **L3**: 對應 `category/3` URL路徑
+- **自訂資料夾**: 也可以手動指定任意資料夾名稱
+- **徑向相容**: 舊版本不指定資料夾的方式仍然支援
 
 ## 📚 相關文件
 
@@ -536,7 +637,149 @@ A:
 
 ---
 
-## 🎯 新功能亮點
+## 🆕 最新功能更新
+
+### 📂 URL分類資料夾系統
+
+新版本引入了全新的URL分類資料夾系統，能够更好地組織和管理不同類別的分析數據：
+
+#### 🎯 主要特色
+- **URL類別分離**: 每個URL類別都有獨立的資料夾 (L1、L2、L3...)
+- **分層儲存結構**: 所有分析結果都按URL類別組織
+- **独立分析**: 可以單獨分析特定URL類別的數據
+- **徑向相容**: 完全相容舊版本的資料夾結構
+
+#### 📁 新的資料夾結構示意
+```
+輸入數據：
+to-analyze-daily-data/
+├── 200-log/L1/           # category/1 的日誌數據
+├── 200-log/L2/           # category/2 的日誌數據
+├── user-agent-log/L1/    # category/1 的User-Agent
+└── user-agent-log/L2/    # category/2 的User-Agent
+
+分析結果：
+daily-analysis-result/
+├── L1/                  # L1 URL類別分析結果
+└── L2/                  # L2 URL類別分析結果
+
+慢渲染分析：
+slow-render-periods-log/
+├── L1/                  # L1 URL類別慢渲染記錄
+└── L2/                  # L2 URL類別慢渲染記錄
+
+performance-analyze-result/
+└── YYYYMMDD/
+    ├── L1/              # L1 URL類別效能結果
+    └── L2/              # L2 URL類別效能結果
+
+週報結果：
+weekly_aggregated_results/
+├── L1/                  # L1 URL類別週報
+└── L2/                  # L2 URL類別週報
+```
+
+#### 🚀 新功能使用範例
+```bash
+# 1. 查詢特定URL類別的數據
+npm run cli query 20250825 https://example.com/category/1/ L1
+npm run cli query 20250825 https://example.com/category/2/ L2
+
+# 2. 分析特定URL類別
+./daily-log-analysis-script.sh "20250825 ~ 20250825" "" "L1"
+./daily-log-analysis-script.sh "20250825 ~ 20250825" "" "L2"
+
+# 3. 慢渲染分析 - 按URL類別
+npm run cli performance 20250825 10 L1
+npm run cli performance 20250825 10 L2
+
+# 4. 週報生成 - 按URL類別
+npm run cli weekly 20250821 20250827 L1
+npm run cli weekly 20250821 20250827 L2
+
+# 5. 查看結果檔案
+# L1 的分析結果在: daily-analysis-result/L1/
+# L2 的分析結果在: daily-analysis-result/L2/
+# L1 的週報在: weekly_aggregated_results/L1/
+# L2 的週報在: weekly_aggregated_results/L2/
+```
+
+#### 📊 分析效益
+- **更清晰的數據分離**: 不同 URL 類別的數據不會混在一起
+- **更精確的效能分析**: 可以單獨分析某個 URL 類別的效能狀況
+- **更有效的問題診斷**: 迅速定位特定 URL 類別的效能問題
+- **更好的資料管理**: 整齊的資料夾結構，更容易維護
+
+### 📁 智能資料夾管理系統
+- **自動資料夾映射**: 根據URL路徑自動創建和管理資料夾
+- **手動資料夾指定**: 支援自訂資料夾名稱，靈活管理不同數據
+- **分層儲存結構**: 每個URL都有獨立的資料夾，避免數據混淆
+
+#### 🗂️ 資料夾結構
+```
+to-analyze-daily-data/
+├── 200-log/
+│   ├── L1/              # category/1 的數據
+│   ├── L2/              # category/2 的數據
+│   ├── products/        # products 的數據
+│   └── api-v1-users/    # api/v1/users 的數據
+└── user-agent-log/
+    ├── L1/
+    ├── L2/
+    ├── products/
+    └── api-v1-users/
+```
+
+#### 🎯 自動映射規則
+- `category/1` → `L1`
+- `category/2` → `L2`
+- `category/3` → `L3`
+- `products/` → `products`
+- `api/v1/users` → `api-v1-users`
+- 根路徑 `/` → `root`
+
+### 🌐 自訂URL查詢支援
+- **動態URL查詢**: 現在可以查詢任意URL的日誌數據，不再限制於固定URL
+- **智能檔名生成**: 根據URL路徑自動生成有意義的檔名
+  - 例如: `https://www.eslite.com/category/2/` → `log-20250825-category-2`
+  - 例如: `https://example.com/api/v1/data` → `log-20250825-api-v1-data`
+- **向後相容性**: 完全支援舊有檔案格式，無需擔心歷史數據
+
+#### 🔄 更新的命令格式
+```bash
+# 自動資料夾映射
+npm run cli query 20250825 https://www.eslite.com/category/2/     # → 存入 L2/
+npm run cli run 20250825 https://example.com/products/            # → 存入 products/
+
+# 手動指定資料夾
+npm run cli query 20250825 https://www.eslite.com/category/2/ L2  # → 存入 L2/
+npm run cli run 20250825 https://example.com/api/ custom-folder   # → 存入 custom-folder/
+
+# 直接使用腳本
+./enhanced-query-daily-log.sh 20250825 https://api.example.com/v1/        # 自動映射
+./enhanced-query-daily-log.sh 20250825 https://site.com/path/ my-folder   # 指定資料夾
+```
+
+#### 📁 新的檔案命名模式
+- **L2日誌**: `to-analyze-daily-data/200-log/[folder]/log-{date}-{path}.csv`
+- **User-Agent日誌**: `to-analyze-daily-data/user-agent-log/[folder]/user-agent-log-{date}-{path}.csv`
+- **自動適應**: 分析腳本會自動偵測新舊檔名格式
+
+#### 資料夾管理範例
+```bash
+# 自動資料夾映射
+npm run cli run 20250825 https://www.eslite.com/category/2/    # → L2/log-20250825-category-2.csv
+npm run cli run 20250825 https://example.com/products/         # → products/log-20250825-products.csv
+npm run cli run 20250825 https://api.site.com/v1/users/        # → api-v1-users/log-20250825-api-v1-users.csv
+
+# 手動指定資料夾
+npm run cli run 20250825 https://www.eslite.com/category/3/ L3        # → L3/
+npm run cli run 20250825 https://custom.com/path/ my-data             # → my-data/
+
+# 分析特定資料夾
+./daily-log-analysis-script.sh "20250825 ~ 20250825" "" "L2"       # 只分析 L2 資料夾
+./daily-log-analysis-script.sh "20250825 ~ 20250825" "" "products"  # 只分析 products 資料夾
+```
 
 ### ✨ 使用流程優化
 - **互動式工作流程指南** (`npm run guide`) - 新手友善的步驟式引導
@@ -558,8 +801,21 @@ A:
 2. `npm run guide` - 跟隨互動式指南學習
 
 #### 日常用戶  
-1. `npm run cli run <date>` - 一鍵完成分析
+1. `npm run cli run <date> <url>` - 一鍵完成分析（現在需要指定URL）
 2. `npm run cli results` - 查看結果
+
+#### URL查詢範例
+```bash
+# 分析不同網站的效能
+npm run cli run 20250825 https://www.eslite.com/category/2/
+npm run cli run 20250825 https://example.com/products/
+npm run cli run 20250825 https://api.site.com/v1/users/
+
+# 查看對應的結果檔案
+# log-20250825-category-2.csv
+# log-20250825-products.csv  
+# log-20250825-api-v1-users.csv
+```
 
 #### 進階用戶
 1. 使用 CLI 的各種子命令進行精確控制
@@ -570,3 +826,39 @@ A:
 **注意**: 此工具專為分析 Prerender 伺服器效能日誌設計，特別針對 Google Cloud Logging 格式最佳化。
 
 **新用戶建議**: 第一次使用時執行 `npm run setup` → `npm run guide` 獲得最佳體驗。
+
+**資料夾管理提醒**: 建議為不同的URL使用不同的資料夾，這樣可以更好地組織和分析數據。
+
+**重要更新**: 現在所有查詢操作都支援自訂URL和智能資料夾管理，讓您可以分析任何目標網站的效能數據並有序地管理！
+
+**最新功能**: 引入URL分類資料夾系統，支援L1、L2等不同URL類別的独立分析，包括慢渲染分析和週報生成！
+
+## 🎯 最佳實踐建議
+
+### 📂 資料夾管理策略
+1. **使用自動映射**: 對於常見的URL路徑（如category/1, category/2），讓系統自動映射到L1, L2
+2. **手動指定資料夾**: 對於特殊用途或測試數據，使用自訂資料夾名稱
+3. **分類分析**: 使用資料夾參數分別分析不同URL的數據，避免混淆
+
+### 🔄 工作流程建議
+```bash
+# 1. 查詢不同URL的數據
+npm run cli query 20250825 https://www.eslite.com/category/1/    # → L1/
+npm run cli query 20250825 https://www.eslite.com/category/2/    # → L2/
+npm run cli query 20250825 https://example.com/products/         # → products/
+
+# 2. 分別分析各資料夾
+./daily-log-analysis-script.sh "20250825 ~ 20250825" "" "L1"
+./daily-log-analysis-script.sh "20250825 ~ 20250825" "" "L2"
+./daily-log-analysis-script.sh "20250825 ~ 20250825" "" "products"
+
+# 3. 或者一次性分析所有資料夾（包括L1、L2等）
+./daily-log-analysis-script.sh "20250825 ~ 20250825"
+
+# 4. 也可以結合URL分類資料夾系統：
+# 先查詢不同URL類別的數據，再分別分析
+npm run cli query 20250825 https://example.com/category/1/ L1
+npm run cli query 20250825 https://example.com/category/2/ L2
+./daily-log-analysis-script.sh "20250825 ~ 20250825" "" "L1"
+./daily-log-analysis-script.sh "20250825 ~ 20250825" "" "L2"
+```

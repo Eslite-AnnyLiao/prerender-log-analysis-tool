@@ -110,11 +110,47 @@ function executeCommand(command, description) {
 }
 
 /**
- * Check if required files exist
+ * Generate filename from URL
  */
-function checkDataFiles(date) {
-    const userAgentFile = `./to-analyze-daily-data/user-agent-log/user-agent-${date}.csv`;
-    const logsFile = `./to-analyze-daily-data/200-log/L2/logs-${date}.csv`;
+function generateFilenameFromUrl(url, date) {
+    // Remove protocol (http:// or https://)
+    let path = url.replace(/^https?:\/\//, '');
+    
+    // Remove domain name, keep only path
+    path = path.replace(/^[^/]*/, '');
+    
+    // Remove leading and trailing slashes
+    path = path.replace(/^\//, '').replace(/\/$/, '');
+    
+    // Replace slashes with hyphens
+    path = path.replace(/\//g, '-');
+    
+    // If path is empty, use 'root'
+    if (!path) {
+        path = 'root';
+    }
+    
+    return `log-${date}-${path}`;
+}
+
+/**
+ * Check if required files exist (with filename pattern and folder)
+ */
+function checkDataFiles(date, filenamePattern = null, folder = null) {
+    let userAgentFile, logsFile;
+    
+    if (folder) {
+        // Check L1/L2 folder structure
+        userAgentFile = `./to-analyze-daily-data/user-agent-log/${folder}/user-agent-log-${date}-category-${folder.slice(-1)}.csv`;
+        logsFile = `./to-analyze-daily-data/200-log/${folder}/log-${date}-category-${folder.slice(-1)}.csv`;
+    } else if (filenamePattern) {
+        userAgentFile = `./to-analyze-daily-data/user-agent-log/user-agent-${filenamePattern}.csv`;
+        logsFile = `./to-analyze-daily-data/200-log/${filenamePattern}.csv`;
+    } else {
+        // Fallback to old naming pattern for backward compatibility
+        userAgentFile = `./to-analyze-daily-data/user-agent-log/user-agent-${date}.csv`;
+        logsFile = `./to-analyze-daily-data/200-log/logs-${date}.csv`;
+    }
     
     return {
         userAgent: fs.existsSync(userAgentFile),
@@ -156,13 +192,19 @@ function createProgram() {
     
     // Query logs command
     program
-        .command('query <date>')
+        .command('query <date> <url> [folder]')
         .alias('q')
-        .description('Query logs for a specific date')
+        .description('Query logs for a specific date and URL')
         .option('-e, --enhanced', 'Use enhanced query script with progress indicators')
-        .action((date, options) => {
+        .action((date, url, folder, options) => {
             if (!validateDate(date)) {
                 log.error('日期格式錯誤！請使用 YYYYMMDD 格式 (例如: 20250821)');
+                process.exit(1);
+            }
+            
+            // Basic URL validation
+            if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                log.error('URL格式錯誤！必須以 http:// 或 https:// 開頭');
                 process.exit(1);
             }
             
@@ -170,9 +212,11 @@ function createProgram() {
             checkAndRefreshGCloudAuth();
             
             log.title(`🔍 Querying logs for ${formatDate(date)}...`);
+            log.info(`URL: ${url}`);
             
             const script = options.enhanced ? 'enhanced-query-daily-log.sh' : 'query-daily-log.sh';
-            if (!executeCommand(`bash ${script} ${date}`, `查詢 ${formatDate(date)} 的日誌`)) {
+            const folderArg = folder ? ` "${folder}"` : '';
+            if (!executeCommand(`bash ${script} ${date} "${url}"${folderArg}`, `查詢 ${formatDate(date)} 的日誌`)) {
                 process.exit(1);
             }
         });
@@ -226,12 +270,18 @@ function createProgram() {
     
     // Complete workflow command
     program
-        .command('run <date>')
+        .command('run <date> <url> [folder]')
         .alias('workflow')
-        .description('Run complete workflow for a date (query + analyze)')
-        .action((date) => {
+        .description('Run complete workflow for a date and URL (query + analyze)')
+        .action((date, url, folder) => {
             if (!validateDate(date)) {
                 log.error('日期格式錯誤！請使用 YYYYMMDD 格式 (例如: 20250821)');
+                process.exit(1);
+            }
+            
+            // Basic URL validation
+            if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                log.error('URL格式錯誤！必須以 http:// 或 https:// 開頭');
                 process.exit(1);
             }
             
@@ -239,25 +289,47 @@ function createProgram() {
             checkAndRefreshGCloudAuth();
             
             log.title(`🚀 Running complete workflow for ${formatDate(date)}...`);
+            log.info(`URL: ${url}`);
+            
+            // Determine folder name - use provided folder or auto-generate from URL
+            let targetFolder = folder;
+            if (!targetFolder) {
+                // Auto-generate folder from URL (same logic as enhanced-query-daily-log.sh)
+                let urlPath = url.replace(/^https?:\/\//, ''); // Remove protocol
+                urlPath = urlPath.replace(/^[^/]*/, ''); // Remove domain
+                urlPath = urlPath.replace(/^\//, '').replace(/\/$/, ''); // Remove leading/trailing slashes
+                urlPath = urlPath.replace(/\//g, '-'); // Replace slashes with hyphens
+                if (urlPath === 'category-1') targetFolder = 'L1';
+                else if (urlPath === 'category-2') targetFolder = 'L2';
+                else if (urlPath === 'category-3') targetFolder = 'L3';
+                else if (urlPath === 'category-4') targetFolder = 'L4';
+                else if (urlPath === 'category-5') targetFolder = 'L5';
+                else if (urlPath === '') targetFolder = 'root';
+                else targetFolder = urlPath;
+            }
+            
+            log.info(`Target folder: ${targetFolder}`);
             
             // Step 1: Query logs
             log.info('Step 1: Querying logs...');
-            if (!executeCommand(`bash enhanced-query-daily-log.sh ${date}`, `查詢 ${formatDate(date)} 的日誌`)) {
+            const folderArg = folder ? ` "${folder}"` : '';
+            if (!executeCommand(`bash enhanced-query-daily-log.sh ${date} "${url}"${folderArg}`, `查詢 ${formatDate(date)} 的日誌`)) {
                 log.error('日誌查詢失敗，停止執行');
                 process.exit(1);
             }
             
-            // Step 2: Analyze data
+            // Step 2: Analyze data  
             log.info('Step 2: Analyzing data...');
-            if (!executeCommand(`bash daily-log-analysis-script.sh "${date} ~ ${date}"`, `分析 ${formatDate(date)} 的數據`)) {
+            const analyzeCmd = `bash daily-log-analysis-script.sh "${date} ~ ${date}" "" "${targetFolder}"`;
+            if (!executeCommand(analyzeCmd, `分析 ${formatDate(date)} 的數據`)) {
                 log.error('數據分析失敗');
                 process.exit(1);
             }
             
             log.success(`🎉 Complete workflow finished for ${formatDate(date)}!`);
             log.info('查看結果:');
-            log.info('  - daily-analysis-result/');
-            log.info('  - daily-pod-analysis-result/');
+            log.info(`  - daily-analysis-result/${targetFolder}/`);
+            log.info(`  - daily-pod-analysis-result/${targetFolder}/`);
         });
     
     // Interactive guide command
@@ -272,10 +344,10 @@ function createProgram() {
     
     // Performance analysis command
     program
-        .command('performance <date> [count]')
+        .command('performance <date> [count] [folder]')
         .alias('perf')
         .description('Run slow render performance analysis')
-        .action((date, count = '10') => {
+        .action((date, count = '10', folder) => {
             if (!validateDate(date)) {
                 log.error('日期格式錯誤！請使用 YYYYMMDD 格式');
                 process.exit(1);
@@ -285,25 +357,28 @@ function createProgram() {
             checkAndRefreshGCloudAuth();
             
             log.title(`🐌 Running performance analysis for ${formatDate(date)}...`);
-            executeCommand(`bash slow-render-analysis-script.sh ${date} ${count}`, `慢渲染分析 (${count} 筆)`);
+            const folderArg = folder ? ` ${folder}` : '';
+            executeCommand(`bash slow-render-analysis-script.sh ${date} ${count}${folderArg}`, `慢渲染分析 (${count} 筆${folder ? `, 資料夾: ${folder}` : ''})`);
         });
     
     // Weekly report command
     program
-        .command('weekly <start-date> <end-date> [folder]')
+        .command('weekly <start-date> <end-date> [url-folder]')
         .alias('week')
         .description('Generate weekly report')
-        .action((startDate, endDate, folder) => {
+        .action((startDate, endDate, urlFolder) => {
             if (!validateDate(startDate) || !validateDate(endDate)) {
                 log.error('日期格式錯誤！請使用 YYYYMMDD 格式');
                 process.exit(1);
             }
             
-            const folderName = folder || `week_${startDate}_${endDate}`;
+            // 基本資料夾名稱由日期決定
+            const folderName = `week_${startDate}_${endDate}`;
             const dateRange = `${startDate} ~ ${endDate}`;
             
             log.title(`📈 Generating weekly report for ${formatDate(startDate)} to ${formatDate(endDate)}...`);
-            executeCommand(`bash week-report-script.sh "${dateRange}" ${folderName}`, '週報生成');
+            const urlFolderArg = urlFolder ? ` ${urlFolder}` : '';
+            executeCommand(`bash week-report-script.sh "${dateRange}" ${folderName}${urlFolderArg}`, `週報生成${urlFolder ? ` (資料夾: ${urlFolder})` : ''}`);
         });
     
     // List results command
@@ -324,13 +399,50 @@ function createProgram() {
             resultDirs.forEach(dir => {
                 if (fs.existsSync(dir)) {
                     console.log(`\n📁 ${dir}:`);
-                    let files = fs.readdirSync(dir);
+                    
+                    // 檢查根目錄檔案
+                    let files = fs.readdirSync(dir, { withFileTypes: true })
+                        .filter(dirent => dirent.isFile())
+                        .map(dirent => dirent.name);
                     
                     if (date) {
                         files = files.filter(file => file.includes(date));
                     }
                     
-                    if (files.length === 0) {
+                    if (files.length > 0) {
+                        files.forEach(file => {
+                            const filePath = path.join(dir, file);
+                            const stats = fs.statSync(filePath);
+                            const size = (stats.size / 1024).toFixed(1);
+                            console.log(`   📄 ${file} (${size} KB)`);
+                        });
+                    }
+                    
+                    // 檢查子資料夾
+                    const subdirs = fs.readdirSync(dir, { withFileTypes: true })
+                        .filter(dirent => dirent.isDirectory())
+                        .map(dirent => dirent.name);
+                        
+                    subdirs.forEach(subdir => {
+                        const subdirPath = path.join(dir, subdir);
+                        let subdirFiles = fs.readdirSync(subdirPath);
+                        
+                        if (date) {
+                            subdirFiles = subdirFiles.filter(file => file.includes(date));
+                        }
+                        
+                        if (subdirFiles.length > 0) {
+                            console.log(`\n   📁 ${subdir}/:`);
+                            subdirFiles.forEach(file => {
+                                const filePath = path.join(subdirPath, file);
+                                const stats = fs.statSync(filePath);
+                                const size = (stats.size / 1024).toFixed(1);
+                                console.log(`     📄 ${file} (${size} KB)`);
+                            });
+                        }
+                    });
+                    
+                    if (files.length === 0 && subdirs.length === 0) {
                         console.log('   (空的)');
                     } else {
                         files.forEach(file => {
@@ -376,8 +488,33 @@ function createProgram() {
             
             resultDirs.forEach(dir => {
                 if (fs.existsSync(dir)) {
-                    const files = fs.readdirSync(dir).filter(file => file.includes(date));
-                    console.log(`  ${path.basename(dir)}: ${files.length > 0 ? '✅' : '❌'} (${files.length} 檔案)`);
+                    // Check root directory files
+                    const files = fs.readdirSync(dir, { withFileTypes: true })
+                        .filter(dirent => dirent.isFile())
+                        .map(dirent => dirent.name)
+                        .filter(file => file.includes(date));
+                    
+                    // Check subdirectory files (L1, L2, etc.)
+                    const subdirs = fs.readdirSync(dir, { withFileTypes: true })
+                        .filter(dirent => dirent.isDirectory())
+                        .map(dirent => dirent.name);
+                    
+                    let subFiles = [];
+                    subdirs.forEach(subdir => {
+                        const subdirPath = path.join(dir, subdir);
+                        const subdirFiles = fs.readdirSync(subdirPath).filter(file => file.includes(date));
+                        subFiles = subFiles.concat(subdirFiles.map(f => `${subdir}/${f}`));
+                    });
+                    
+                    const totalFiles = files.length + subFiles.length;
+                    console.log(`  ${path.basename(dir)}: ${totalFiles > 0 ? '✅' : '❌'} (${totalFiles} 檔案)`);
+                    
+                    if (files.length > 0) {
+                        files.forEach(file => console.log(`    - ${file}`));
+                    }
+                    if (subFiles.length > 0) {
+                        subFiles.forEach(file => console.log(`    - ${file}`));
+                    }
                 }
             });
         });
@@ -396,14 +533,22 @@ function main() {
         console.log(`${colors.cyan}📊 Analysis Log - Unified CLI${colors.reset}`);
         console.log('================================\n');
         console.log('快速開始:');
-        console.log('  analysis-cli setup              # 環境設置');
-        console.log('  analysis-cli run 20250821       # 完整工作流程');
-        console.log('  analysis-cli guide              # 互動式指南');
+        console.log('  analysis-cli setup                                    # 環境設置');
+        console.log('  analysis-cli run 20250821 https://example.com/path/      # 完整工作流程');
+        console.log('  analysis-cli run 20250821 https://example.com/path/ L2   # 指定資料夾');
+        console.log('  analysis-cli performance 20250821 10 L1              # 慢渲染分析 (指定資料夾)');
+        console.log('  analysis-cli weekly 20250821 20250827 L1             # 週報生成 (指定資料夾)');
+        console.log('  analysis-cli guide                                    # 互動式指南');
         console.log('\n常用命令:');
-        console.log('  analysis-cli query 20250821     # 查詢日誌');
-        console.log('  analysis-cli analyze -d 20250821 # 分析數據');
-        console.log('  analysis-cli status 20250821    # 檢查狀態');
-        console.log('  analysis-cli results             # 查看結果');
+        console.log('  analysis-cli query 20250821 https://example.com/         # 查詢日誌');
+        console.log('  analysis-cli query 20250821 https://example.com/ L2      # 查詢到指定資料夾');
+        console.log('  analysis-cli analyze -d 20250821                     # 分析數據');
+        console.log('  analysis-cli performance 20250821 10                 # 慢渲染分析 (10筆)');
+        console.log('  analysis-cli performance 20250821 5 L2               # 慢渲染分析 (L2資料夾)');
+        console.log('  analysis-cli weekly 20250821 20250827               # 週報生成');
+        console.log('  analysis-cli weekly 20250821 20250827 L2            # 週報生成 (L2資料夾)');
+        console.log('  analysis-cli status 20250821                         # 檢查狀態');
+        console.log('  analysis-cli results                                  # 查看結果');
         console.log('\n使用 --help 查看完整說明');
         return;
     }

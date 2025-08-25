@@ -1136,7 +1136,9 @@ async function main() {
             console.error('範例:');
             console.error('  node aggregator.js file1.json file2.json file3.json');
             console.error('  node aggregator.js --dir ./daily-analysis-result');
+            console.error('  node aggregator.js --dir ./daily-analysis-result/L2');
             console.error('  node aggregator.js --pattern "daily-analysis-result/*_0724_*.json"');
+            console.error('  node aggregator.js --pattern "daily-analysis-result/L2/*_analysis.json"');
             return;
         }
 
@@ -1176,8 +1178,23 @@ async function main() {
             ? `${finalStats.metadata.analysis_period.start_date}_to_${finalStats.metadata.analysis_period.end_date}`
             : 'unknown_period';
 
-        // 確保輸出目錄存在
-        const outputDir = 'weekly_aggregated_results';
+        // 確保輸出目錄存在，支援 L1/L2 子資料夾
+        let outputDir = 'weekly_aggregated_results';
+        
+        // 檢查輸入目錄是否包含 L1/L2 等子資料夾
+        if (args[0] === '--dir' && args[1]) {
+            const inputDir = args[1];
+            // 從輸入路徑中提取 URL 資料夾（L1/L2等）
+            const pathParts = inputDir.split('/');
+            const lastPart = pathParts[pathParts.length - 1];
+            
+            // 如果最後一部分是 L1、L2 等格式，則在輸出目錄中創建相同結構
+            if (/^L\d+$/.test(lastPart)) {
+                outputDir = `weekly_aggregated_results/${lastPart}`;
+                console.log(`📂 檢測到 URL 資料夾: ${lastPart}，將建立對應的輸出結構`);
+            }
+        }
+        
         if (!fs.existsSync(outputDir)) {
             fs.mkdirSync(outputDir, { recursive: true });
             console.log(`✅ 已建立 ${outputDir} 資料夾`);
@@ -1193,6 +1210,12 @@ async function main() {
         const txtFileName = `${outputDir}/aggregated_report_${dateRange}.txt`;
         fs.writeFileSync(txtFileName, textReport, 'utf8');
         console.log(`✅ 文字報告已儲存至: ${txtFileName}`);
+        
+        // 顯示資料夾結構資訊
+        const urlFolder = outputDir.includes('/') ? outputDir.split('/')[1] : null;
+        if (urlFolder) {
+            console.log(`📊 已為 ${urlFolder} URL 類別生成專屬週報`);
+        }
 
     } catch (error) {
         console.error('❌ 處理過程中發生錯誤:', error.message);

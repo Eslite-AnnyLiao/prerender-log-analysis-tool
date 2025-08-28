@@ -104,9 +104,16 @@ fi
 copied_files=0
 for date in "${dates[@]}"; do
     if [ -n "$url_folder" ]; then
-        # 新格式：L1/L2 資料夾結構
-        category_number="${url_folder: -1}" # 從 L1/L2 提取數字
-        json_file="./daily-analysis-result/$url_folder/dual_user-agent-log-${date}-category-${category_number}_log-${date}-category-${category_number}_analysis.json"
+        # 依據參數決定檔案路徑和檔名
+        if [ "$url_folder" = "L1" ]; then
+            json_file="./daily-analysis-result/category/dual_user-agent-log-${date}-category-1_log-${date}-category-1_analysis.json"
+        elif [ "$url_folder" = "L2" ]; then
+            json_file="./daily-analysis-result/category/dual_user-agent-log-${date}-category-2_log-${date}-category-2_analysis.json"
+        elif [ "$url_folder" = "category" ]; then
+            json_file="./daily-analysis-result/category/dual_user-agent-log-${date}-category_log-${date}-category_analysis.json"
+        else
+            json_file="./daily-analysis-result/category/dual_user-agent-log-${date}-${url_folder}_log-${date}-${url_folder}_analysis.json"
+        fi
     else
         # 舊格式：根目錄檔案
         json_file="./daily-analysis-result/dual_user-agent-${date}_logs-${date}_analysis.json"

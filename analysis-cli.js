@@ -70,7 +70,7 @@ function checkAndRefreshGCloudAuth() {
             execSync('gcloud auth application-default login', { stdio: 'inherit' });
             log.success('Google Cloud 認證完成');
         } else {
-            log.info('Google Cloud 認證有效 (不到 24 小時)');
+            log.info('Google Cloud 認證有效 (不到 23 小時)');
         }
     } catch (error) {
         log.error('Google Cloud 認證失敗');

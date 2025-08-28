@@ -176,16 +176,16 @@ function checkGoogleCloud() {
     if (fs.existsSync(credentialsPath)) {
         checks.credentials.exists = true;
         
-        // Check if credentials are recent (less than 24 hours old)
+        // Check if credentials are recent (less than 23 hours old)
         const stats = fs.statSync(credentialsPath);
         const ageInHours = (Date.now() - stats.mtime.getTime()) / (1000 * 60 * 60);
-        checks.credentials.valid = ageInHours < 24;
+        checks.credentials.valid = ageInHours < 23;
         
         if (checks.credentials.valid) {
             log.success('Google Cloud credentials are valid ✓');
             checks.authenticated = true;
         } else {
-            log.warning(`Credentials are ${Math.round(ageInHours)} hours old (>24h), may need refresh`);
+            log.warning(`Credentials are ${Math.round(ageInHours)} hours old (>23h), may need refresh`);
         }
     } else {
         log.error('Google Cloud credentials not found!');

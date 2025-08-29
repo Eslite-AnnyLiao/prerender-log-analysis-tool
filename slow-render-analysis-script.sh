@@ -47,7 +47,12 @@ fi
 
 # 檢查必要的分析結果檔案是否存在
 if [ -n "$folder" ]; then
-    analysis_file="./daily-analysis-result/$folder/dual_user-agent-log-${date_str}-category-${folder: -1}_log-${date_str}-category-${folder: -1}_analysis.json"
+    if [ "$folder" = "category" ]; then
+        analysis_file="./daily-analysis-result/category/dual_user-agent-log-${date_str}-category_log-${date_str}-category_analysis.json"
+    else
+        # 對於 L1, L2 等資料夾，取最後一個字符作為 category 編號
+        analysis_file="./daily-analysis-result/$folder/dual_user-agent-log-${date_str}-category-${folder: -1}_log-${date_str}-category-${folder: -1}_analysis.json"
+    fi
 else
     analysis_file="./daily-analysis-result/dual_user-agent-${date_str}_logs-${date_str}_analysis.json"
 fi

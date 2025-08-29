@@ -44,8 +44,12 @@ class SlowRenderAnalyzer {
   extractSlowRenderPeriods(dateStr, count, folder) {
     let inputFile;
     if (folder) {
-      const categoryNumber = folder.slice(-1); // Extract number from L1, L2, etc.
-      inputFile = `./daily-analysis-result/${folder}/dual_user-agent-log-${dateStr}-category-${categoryNumber}_log-${dateStr}-category-${categoryNumber}_analysis.json`;
+      if (folder === 'category') {
+        inputFile = `./daily-analysis-result/category/dual_user-agent-log-${dateStr}-category_log-${dateStr}-category_analysis.json`;
+      } else {
+        const categoryNumber = folder.slice(-1); // Extract number from L1, L2, etc.
+        inputFile = `./daily-analysis-result/${folder}/dual_user-agent-log-${dateStr}-category-${categoryNumber}_log-${dateStr}-category-${categoryNumber}_analysis.json`;
+      }
     } else {
       inputFile = `./daily-analysis-result/dual_user-agent-${dateStr}_logs-${dateStr}_analysis.json`;
     }

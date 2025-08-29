@@ -121,6 +121,114 @@ function getHourMinuteLabel(timestamp) {
     }
 }
 
+// 新增：取得秒級別時間標籤 (用於秒級別統計)
+function getSecondLabel(timestamp) {
+    if (!timestamp) return null;
+
+    try {
+        const cleanTimestamp = timestamp.replace(/'/g, '');
+        const utcDate = new Date(cleanTimestamp);
+
+        if (isNaN(utcDate.getTime())) {
+            return null;
+        }
+
+        // 台灣時區是 UTC+8，所以加上 8 小時的毫秒數
+        const taiwanTimestamp = utcDate.getTime() + (8 * 60 * 60 * 1000);
+        const taiwanDate = new Date(taiwanTimestamp);
+
+        // 格式化為 YYYY-MM-DD HH:mm:ss
+        const year = taiwanDate.getUTCFullYear();
+        const month = String(taiwanDate.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(taiwanDate.getUTCDate()).padStart(2, '0');
+        const hours = String(taiwanDate.getUTCHours()).padStart(2, '0');
+        const minutes = String(taiwanDate.getUTCMinutes()).padStart(2, '0');
+        const seconds = String(taiwanDate.getUTCSeconds()).padStart(2, '0');
+
+        return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    } catch (error) {
+        return null;
+    }
+}
+
+// 新增：分析高頻訪問模式
+function analyzeHighFrequencyAccess(userAgentMinutelyData, userAgentSecondlyData) {
+    console.log('\n📈 分析高頻訪問模式...');
+    
+    const highFrequencyAnalysis = {
+        minutely_violations: [], // 一分鐘內超過2次的 UserAgent
+        secondly_violations: [], // 一秒內超過2次的 UserAgent
+        summary: {
+            total_minute_violations: 0,
+            total_second_violations: 0,
+            unique_violating_user_agents: new Set(),
+            max_per_minute: 0,
+            max_per_second: 0
+        }
+    };
+
+    // 分析分鐘級別違規
+    Object.keys(userAgentMinutelyData).forEach(minuteLabel => {
+        const userAgentsInMinute = userAgentMinutelyData[minuteLabel];
+        
+        Object.keys(userAgentsInMinute).forEach(userAgent => {
+            const count = userAgentsInMinute[userAgent];
+            
+            if (count > 2) {
+                highFrequencyAnalysis.minutely_violations.push({
+                    timestamp: minuteLabel,
+                    user_agent: userAgent,
+                    access_count: count
+                });
+                
+                highFrequencyAnalysis.summary.total_minute_violations++;
+                highFrequencyAnalysis.summary.unique_violating_user_agents.add(userAgent);
+                
+                if (count > highFrequencyAnalysis.summary.max_per_minute) {
+                    highFrequencyAnalysis.summary.max_per_minute = count;
+                }
+            }
+        });
+    });
+
+    // 分析秒級別違規
+    Object.keys(userAgentSecondlyData).forEach(secondLabel => {
+        const userAgentsInSecond = userAgentSecondlyData[secondLabel];
+        
+        Object.keys(userAgentsInSecond).forEach(userAgent => {
+            const count = userAgentsInSecond[userAgent];
+            
+            if (count > 2) {
+                highFrequencyAnalysis.secondly_violations.push({
+                    timestamp: secondLabel,
+                    user_agent: userAgent,
+                    access_count: count
+                });
+                
+                highFrequencyAnalysis.summary.total_second_violations++;
+                highFrequencyAnalysis.summary.unique_violating_user_agents.add(userAgent);
+                
+                if (count > highFrequencyAnalysis.summary.max_per_second) {
+                    highFrequencyAnalysis.summary.max_per_second = count;
+                }
+            }
+        });
+    });
+
+    // 轉換 Set 為數字
+    highFrequencyAnalysis.summary.unique_violating_user_agents = 
+        highFrequencyAnalysis.summary.unique_violating_user_agents.size;
+
+    // 排序違規記錄（按訴訪問數量降序）
+    highFrequencyAnalysis.minutely_violations.sort((a, b) => b.access_count - a.access_count);
+    highFrequencyAnalysis.secondly_violations.sort((a, b) => b.access_count - a.access_count);
+
+    console.log(`✅ 發現 ${highFrequencyAnalysis.summary.total_minute_violations} 筆分鐘級別違規`);
+    console.log(`✅ 發現 ${highFrequencyAnalysis.summary.total_second_violations} 筆秒級別違規`);
+    
+    return highFrequencyAnalysis;
+}
+
 // 計算百分位數 (Percentile)
 function calculatePercentile(sortedArray, percentile) {
     if (sortedArray.length === 0) return 0;
@@ -525,9 +633,11 @@ async function analyzeTwoCsvFiles(userAgentFile, renderTimeFile) {
         // User-Agent 相關資料結構
         const userAgentHourlyRequestData = {};
         const userAgentMinutelyRequestData = {};
+        const userAgentSecondlyRequestData = {}; // 新增：記錄每秒資料筆數
         const userAgentData = {}; // 記錄每個 User-Agent 的總次數
         const userAgentHourlyData = {}; // 記錄每小時每個 User-Agent 的次數
-        const userAgentMinutelyData = {}; // 新增：記錄每分鐘每個 User-Agent 的次數
+        const userAgentMinutelyData = {}; // 記錄每分鐘每個 User-Agent 的次數
+        const userAgentSecondlyData = {}; // 新增：記錄每秒每個 User-Agent 的次數
 
         // 新增：reqId 關聯資料結構
         const reqIdToUserAgent = new Map(); // reqId -> userAgent 映射
@@ -549,6 +659,7 @@ async function analyzeTwoCsvFiles(userAgentFile, renderTimeFile) {
                 const reqId = payloadInfo.reqId;
                 const hourLabel = getHourLabel(row.timestamp);
                 const minuteLabel = getMinuteLabel(row.timestamp);
+                const secondLabel = getSecondLabel(row.timestamp); // 新增：秒級別時間標籤
 
                 // 建立 reqId 到 userAgent 的映射
                 if (reqId && userAgent) {
@@ -578,6 +689,23 @@ async function analyzeTwoCsvFiles(userAgentFile, renderTimeFile) {
                         userAgentMinutelyData[minuteLabel][userAgent] = 0;
                     }
                     userAgentMinutelyData[minuteLabel][userAgent]++;
+                }
+
+                // 新增：統計每秒資料筆數和每秒每個 User-Agent 的次數
+                if (secondLabel) {
+                    if (!userAgentSecondlyRequestData[secondLabel]) {
+                        userAgentSecondlyRequestData[secondLabel] = 0;
+                    }
+                    userAgentSecondlyRequestData[secondLabel]++;
+
+                    // 統計每秒每個 User-Agent 的次數
+                    if (!userAgentSecondlyData[secondLabel]) {
+                        userAgentSecondlyData[secondLabel] = {};
+                    }
+                    if (!userAgentSecondlyData[secondLabel][userAgent]) {
+                        userAgentSecondlyData[secondLabel][userAgent] = 0;
+                    }
+                    userAgentSecondlyData[secondLabel][userAgent]++;
                 }
 
                 // 統計整體 User-Agent 數量
@@ -711,6 +839,10 @@ async function analyzeTwoCsvFiles(userAgentFile, renderTimeFile) {
             userAgentAnalysis = analyzeUserAgents(userAgentData, userAgentHourlyData, userAgentRenderTimes);
         }
 
+        // 新增：高頻訪問模式分析
+        console.log('\n🚨 執行高頻訪問檢測...');
+        const highFrequencyAnalysis = analyzeHighFrequencyAccess(userAgentMinutelyData, userAgentSecondlyData);
+
         // 準備輸出資料
         const analysisResult = {
             // 原有的分析結果
@@ -729,6 +861,9 @@ async function analyzeTwoCsvFiles(userAgentFile, renderTimeFile) {
 
             // URL 分析結果 (增強版)
             urlAnalysis: urlAnalysis,
+
+            // 新增：高頻訪問模式分析結果
+            highFrequencyAnalysis: highFrequencyAnalysis,
 
             // User-Agent 分析結果 (增強版)
             userAgentAnalysis: userAgentAnalysis,
@@ -1132,6 +1267,39 @@ async function main() {
             console.log('  沒有重複的慢渲染時分點');
         }
 
+        // 顯示高頻訪問分析結果
+        console.log('\n\n🚨 高頻訪問模式分析結果:');
+        console.log('=' .repeat(50));
+        
+        console.log('\n📊 整體違規統計:');
+        console.log(`  • 分鐘級別違規總數: ${result.highFrequencyAnalysis.summary.total_minute_violations}`);
+        console.log(`  • 秒級別違規總數: ${result.highFrequencyAnalysis.summary.total_second_violations}`);
+        console.log(`  • 涉及的不同 UserAgent 數量: ${result.highFrequencyAnalysis.summary.unique_violating_user_agents}`);
+        console.log(`  • 單分鐘內最大訪問次數: ${result.highFrequencyAnalysis.summary.max_per_minute}`);
+        console.log(`  • 單秒內最大訪問次數: ${result.highFrequencyAnalysis.summary.max_per_second}`);
+
+        if (result.highFrequencyAnalysis.minutely_violations.length > 0) {
+            console.log('\n🚨 一分鐘內訪問大於2次的 UserAgent (前5名):');
+            result.highFrequencyAnalysis.minutely_violations.slice(0, 5).forEach((item, index) => {
+                const shortUA = item.user_agent.length > 60 ? item.user_agent.substring(0, 60) + '...' : item.user_agent;
+                console.log(`  ${index + 1}. ${item.timestamp} - ${item.access_count}次`);
+                console.log(`     ${shortUA}`);
+            });
+        } else {
+            console.log('\n✅ 未發現一分鐘內訪問大於2次的情況');
+        }
+
+        if (result.highFrequencyAnalysis.secondly_violations.length > 0) {
+            console.log('\n⚡ 一秒內訪問大於2次的 UserAgent (前5名):');
+            result.highFrequencyAnalysis.secondly_violations.slice(0, 5).forEach((item, index) => {
+                const shortUA = item.user_agent.length > 60 ? item.user_agent.substring(0, 60) + '...' : item.user_agent;
+                console.log(`  ${index + 1}. ${item.timestamp} - ${item.access_count}次`);
+                console.log(`     ${shortUA}`);
+            });
+        } else {
+            console.log('\n✅ 未發現一秒內訪問大於2次的情況');
+        }
+
         // 顯示 URL 分析結果
         console.log('\n\n🔗 URL 分析結果:');
         console.log('=' .repeat(50));
@@ -1488,6 +1656,31 @@ ${result.requestPerMinuteStats.top15.map((item, index) =>
 ${peakMinuteSection}
 
 ${slowRenderHourMinuteSection}
+
+高頻訪問模式分析:
+================================================
+📊 整體違規統計:
+• 分鐘級別違規總數: ${result.highFrequencyAnalysis.summary.total_minute_violations}
+• 秒級別違規總數: ${result.highFrequencyAnalysis.summary.total_second_violations}
+• 涉及的不同 UserAgent 數量: ${result.highFrequencyAnalysis.summary.unique_violating_user_agents}
+• 單分鐘內最大訪問次數: ${result.highFrequencyAnalysis.summary.max_per_minute}
+• 單秒內最大訪問次數: ${result.highFrequencyAnalysis.summary.max_per_second}
+
+🚨 一分鐘內訪問大於2次的 UserAgent (前10名):
+${result.highFrequencyAnalysis.minutely_violations.length > 0 
+    ? result.highFrequencyAnalysis.minutely_violations.slice(0, 10).map((item, index) => `
+${index + 1}. 時間: ${item.timestamp}
+   User-Agent: ${item.user_agent.length > 80 ? item.user_agent.substring(0, 80) + '...' : item.user_agent}
+   訪問次數: ${item.access_count} 次`).join('\n')
+    : '未發現違規情況'}
+
+⚡ 一秒內訪問大於2次的 UserAgent (前10名):
+${result.highFrequencyAnalysis.secondly_violations.length > 0 
+    ? result.highFrequencyAnalysis.secondly_violations.slice(0, 10).map((item, index) => `
+${index + 1}. 時間: ${item.timestamp}
+   User-Agent: ${item.user_agent.length > 80 ? item.user_agent.substring(0, 80) + '...' : item.user_agent}
+   訪問次數: ${item.access_count} 次`).join('\n')
+    : '未發現違規情況'}
 
 URL 分析結果:
 ================================================

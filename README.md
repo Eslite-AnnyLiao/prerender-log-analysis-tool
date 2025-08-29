@@ -120,7 +120,7 @@ npm run cli check              # 環境檢查
 # 數據分析流程
 npm run cli query 20250821 https://example.com/         # 查詢日誌（自動資料夾映射）
 npm run cli query 20250821 https://example.com/ L2      # 查詢到指定資料夾
-npm run cli analyze -d 20250821                         # 分析數據  
+npm run cli -- analyze -d 20250821                     # 分析數據 (需要 -- 分隔符)  
 npm run cli run 20250821 https://example.com/           # 完整工作流程（查詢+分析）
 npm run cli run 20250821 https://example.com/ custom    # 指定資料夾的完整工作流程
 
@@ -220,8 +220,8 @@ npm run cli run 20250821 https://www.eslite.com/category/2/
 # 步驟 1: 查詢日誌（現在需要指定URL）
 npm run cli query 20250821 https://example.com/products/
 
-# 步驟 2: 分析數據
-npm run cli analyze -d 20250821
+# 步驟 2: 分析數據 (需要使用 -- 分隔符)
+npm run cli -- analyze -d 20250821
 
 # 步驟 3: 檢查結果
 npm run cli status 20250821
@@ -252,8 +252,8 @@ npm run cli run 20250821 https://www.eslite.com/category/2/
 # 分析不同URL的數據
 npm run cli run 20250821 https://example.com/api/v1/products/
 
-# 分析一週數據
-npm run cli analyze -r "20250821 ~ 20250827"
+# 分析一週數據 (需要使用 -- 分隔符)
+npm run cli -- analyze -r "20250821 ~ 20250827"
 
 # 檢查狀態和結果
 npm run cli status 20250821
@@ -342,8 +342,8 @@ npm run start         # 同 npm run cli
 ```bash
 npm run cli run <date> <url>              # 完整工作流程（一鍵完成）
 npm run cli query <date> <url>            # 查詢日誌
-npm run cli analyze -d <date>             # 分析單日數據
-npm run cli analyze -r "<range>"          # 分析日期範圍
+npm run cli -- analyze -d <date>           # 分析單日數據 (需要 -- 分隔符)
+npm run cli -- analyze -r "<range>"       # 分析日期範圍 (需要 -- 分隔符)
 ```
 
 #### 📈 進階功能
@@ -585,8 +585,14 @@ A:
 ### Q: 支援哪些作業系統？
 A: 支援 macOS、Linux 和 Windows（需要 WSL 或 Git Bash）。
 
+### Q: 為什麼 analyze 命令需要使用 `--`？
+A: 因為 `analyze` 命令使用帶值的選項參數（如 `-d` 和 `-r`），npm 需要 `--` 分隔符來正確傳遞這些參數。
+   - **正確**: `npm run cli -- analyze -r "20250821 ~ 20250827"`
+   - **錯誤**: `npm run cli analyze -r "20250821 ~ 20250827"` ❌ 會出現 "too many arguments" 錯誤
+   - 其他命令（如 `query`, `run`, `status`）使用位置參數，不需要 `--`
+
 ### Q: 如何分析日期範圍？
-A: 使用 `npm run cli analyze -r "20250821 ~ 20250827"` 分析指定日期範圍。也可以結合URL資料夾：`./daily-log-analysis-script.sh "20250821 ~ 20250827" "" "L1"`
+A: 使用 `npm run cli -- analyze -r "20250821 ~ 20250827"` 分析指定日期範圍。也可以結合URL資料夾：`./daily-log-analysis-script.sh "20250821 ~ 20250827" "" "L1"`
 
 ### Q: 互動式指南和自動化命令哪個比較好？
 A: 

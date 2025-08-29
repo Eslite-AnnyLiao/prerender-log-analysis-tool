@@ -233,8 +233,8 @@ function createProgram() {
             if (!options.date && !options.range) {
                 log.error('請指定日期 (-d) 或日期範圍 (-r)');
                 log.info('範例:');
-                log.info('  analysis-cli analyze -d 20250821');
-                log.info('  analysis-cli analyze -r "20250821 ~ 20250827"');
+                log.info('  npm run cli -- analyze -d 20250821');
+                log.info('  npm run cli -- analyze -r "20250821 ~ 20250827"');
                 process.exit(1);
             }
             
@@ -254,7 +254,7 @@ function createProgram() {
                         if (!dataStatus.userAgent) log.error(`  - ${dataStatus.userAgentPath}`);
                         if (!dataStatus.logs) log.error(`  - ${dataStatus.logsPath}`);
                         log.info('請先執行日誌查詢:');
-                        log.info(`  analysis-cli query ${options.date}`);
+                        log.info(`  npm run cli query ${options.date}`);
                         process.exit(1);
                     }
                 }
@@ -470,7 +470,7 @@ function createProgram() {
             
             if (!date) {
                 log.info('請指定要檢查的日期');
-                log.info('範例: analysis-cli status 20250821');
+                log.info('範例: npm run cli status 20250821');
                 return;
             }
             
@@ -533,22 +533,22 @@ function main() {
         console.log(`${colors.cyan}📊 Analysis Log - Unified CLI${colors.reset}`);
         console.log('================================\n');
         console.log('快速開始:');
-        console.log('  analysis-cli setup                                    # 環境設置');
-        console.log('  analysis-cli run 20250821 https://example.com/path/      # 完整工作流程');
-        console.log('  analysis-cli run 20250821 https://example.com/path/ L2   # 指定資料夾');
-        console.log('  analysis-cli performance 20250821 10 L1              # 慢渲染分析 (指定資料夾)');
-        console.log('  analysis-cli weekly 20250821 20250827 L1             # 週報生成 (指定資料夾)');
-        console.log('  analysis-cli guide                                    # 互動式指南');
+        console.log('  npm run cli setup                                     # 環境設置');
+        console.log('  npm run cli run 20250821 https://example.com/path/       # 完整工作流程');
+        console.log('  npm run cli run 20250821 https://example.com/path/ L2    # 指定資料夾');
+        console.log('  npm run cli performance 20250821 10 L1               # 慢渲染分析 (指定資料夾)');
+        console.log('  npm run cli weekly 20250821 20250827 L1              # 週報生成 (指定資料夾)');
+        console.log('  npm run cli guide                                     # 互動式指南');
         console.log('\n常用命令:');
-        console.log('  analysis-cli query 20250821 https://example.com/         # 查詢日誌');
-        console.log('  analysis-cli query 20250821 https://example.com/ L2      # 查詢到指定資料夾');
-        console.log('  analysis-cli analyze -d 20250821                     # 分析數據');
-        console.log('  analysis-cli performance 20250821 10                 # 慢渲染分析 (10筆)');
-        console.log('  analysis-cli performance 20250821 5 L2               # 慢渲染分析 (L2資料夾)');
-        console.log('  analysis-cli weekly 20250821 20250827               # 週報生成');
-        console.log('  analysis-cli weekly 20250821 20250827 L2            # 週報生成 (L2資料夾)');
-        console.log('  analysis-cli status 20250821                         # 檢查狀態');
-        console.log('  analysis-cli results                                  # 查看結果');
+        console.log('  npm run cli query 20250821 https://example.com/          # 查詢日誌');
+        console.log('  npm run cli query 20250821 https://example.com/ L2       # 查詢到指定資料夾');
+        console.log('  npm run cli -- analyze -d 20250821                   # 分析數據 (需要 -- 分隔符)');
+        console.log('  npm run cli performance 20250821 10                  # 慢渲染分析 (10筆)');
+        console.log('  npm run cli performance 20250821 5 L2                # 慢渲染分析 (L2資料夾)');
+        console.log('  npm run cli weekly 20250821 20250827                 # 週報生成');
+        console.log('  npm run cli weekly 20250821 20250827 L2              # 週報生成 (L2資料夾)');
+        console.log('  npm run cli status 20250821                          # 檢查狀態');
+        console.log('  npm run cli results                                   # 查看結果');
         console.log('\n使用 --help 查看完整說明');
         return;
     }

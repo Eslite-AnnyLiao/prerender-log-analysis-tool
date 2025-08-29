@@ -812,13 +812,13 @@ function analyzeTopMinutesAcrossPods(allPodResults) {
         });
     });
 
-    // 2. 計算整體的 top 15 分鐘
+    // 2. 計算總請求數超過10次的繁忙分鐘
     const overallTop15Minutes = Object.entries(overallMinutelyData)
         .map(([minute, count]) => ({ minute, count }))
-        .sort((a, b) => b.count - a.count)
-        .slice(0, 15);
+        .filter(item => item.count > 10) // 只選擇總請求數超過10次的時段
+        .sort((a, b) => b.count - a.count);
 
-    // 3. 對於每個 top 15 分鐘，收集各 Pod 的數據
+    // 3. 對於每個繁忙分鐘，收集各 Pod 的數據
     const topMinutesBreakdown = overallTop15Minutes.map((topMinute, index) => {
         const podBreakdown = {};
         let totalCount = 0;
@@ -851,8 +851,8 @@ function analyzeTopMinutesAcrossPods(allPodResults) {
     });
 
     return {
-        overallTop15Minutes: overallTop15Minutes,
-        topMinutesBreakdown: topMinutesBreakdown
+        busyMinutes: overallTop15Minutes, // 改名更準確反映新邏輯
+        busyMinutesBreakdown: topMinutesBreakdown
     };
 }
 
@@ -965,11 +965,11 @@ function displayOverallSummary(overallStats) {
     console.log(`平均 reqId 匹配率: ${overallStats.avgMatchingRate}%`);
 
     // 新增：顯示跨 Pod 時間點分析
-    console.log('\n\n🕐 系統最繁忙時段 TOP 15 - 跨 Pod 分布分析:');
+    console.log('\n\n🕐 系統最繁忙時段 (總請求數 > 10) - 跨 Pod 分布分析:');
     console.log('=' .repeat(60));
 
-    if (overallStats.topMinutesAnalysis && overallStats.topMinutesAnalysis.topMinutesBreakdown) {
-        overallStats.topMinutesAnalysis.topMinutesBreakdown.slice(0, 10).forEach(minuteData => {
+    if (overallStats.topMinutesAnalysis && overallStats.topMinutesAnalysis.busyMinutesBreakdown) {
+        overallStats.topMinutesAnalysis.busyMinutesBreakdown.slice(0, 10).forEach(minuteData => {
             console.log(`\n${minuteData.rank}. ${minuteData.minute} - 總請求: ${minuteData.totalCount} 次 (涉及 ${minuteData.podCount} 個 Pod)`);
 
             // 顯示前5個 Pod 的分布
@@ -985,8 +985,8 @@ function displayOverallSummary(overallStats) {
             }
         });
 
-        if (overallStats.topMinutesAnalysis.topMinutesBreakdown.length > 10) {
-            console.log(`\n   ... 還有 ${overallStats.topMinutesAnalysis.topMinutesBreakdown.length - 10} 個繁忙時段 (請查看 JSON 報告)`);
+        if (overallStats.topMinutesAnalysis.busyMinutesBreakdown.length > 10) {
+            console.log(`\n   ... 還有 ${overallStats.topMinutesAnalysis.busyMinutesBreakdown.length - 10} 個繁忙時段 (請查看 JSON 報告)`);
         }
     }
 
@@ -1128,8 +1128,8 @@ async function main() {
             overall_stats: overallStats,
             // 新增：跨 Pod 時間點分析
             top_minutes_cross_pod_analysis: {
-                overall_top_15_minutes: overallStats.topMinutesAnalysis.overallTop15Minutes,
-                detailed_breakdown: overallStats.topMinutesAnalysis.topMinutesBreakdown
+                busy_minutes: overallStats.topMinutesAnalysis.busyMinutes,
+                detailed_breakdown: overallStats.topMinutesAnalysis.busyMinutesBreakdown
             },
             pod_results: allPodResults.map(pod => ({
                 pod_name: pod.podName,
@@ -1180,11 +1180,13 @@ async function main() {
             overall_stats: overallStats,
             // 新增：跨 Pod 時間點分析摘要
             top_minutes_cross_pod_summary: {
-                total_top_minutes_analyzed: overallStats.topMinutesAnalysis.topMinutesBreakdown.length,
-                peak_minute: overallStats.topMinutesAnalysis.topMinutesBreakdown[0] || null,
-                most_balanced_minute: overallStats.topMinutesAnalysis.topMinutesBreakdown.reduce((prev, current) =>
-                    (prev.podCount > current.podCount) ? prev : current, overallStats.topMinutesAnalysis.topMinutesBreakdown[0] || null),
-                top_5_minutes_breakdown: overallStats.topMinutesAnalysis.topMinutesBreakdown.slice(0, 5)
+                total_busy_minutes_analyzed: overallStats.topMinutesAnalysis.busyMinutesBreakdown.length,
+                peak_minute: overallStats.topMinutesAnalysis.busyMinutesBreakdown[0] || null,
+                most_balanced_minute: overallStats.topMinutesAnalysis.busyMinutesBreakdown.length > 0 
+                    ? overallStats.topMinutesAnalysis.busyMinutesBreakdown.reduce((prev, current) =>
+                        (prev.podCount > current.podCount) ? prev : current)
+                    : null,
+                top_5_minutes_breakdown: overallStats.topMinutesAnalysis.busyMinutesBreakdown.slice(0, 5)
             },
             pod_summary: allPodResults.map(pod => ({
                 pod_name: pod.podName,
@@ -1251,8 +1253,8 @@ ${Object.entries(overallStats.slowRenderByPod).map(([podName, count]) =>
 
 ================================================================
 
-系統最繁忙時段 TOP 15 - 跨 Pod 分布分析:
-${overallStats.topMinutesAnalysis.topMinutesBreakdown.map(minuteData => `
+系統最繁忙時段 (總請求數 > 10) - 跨 Pod 分布分析:
+${overallStats.topMinutesAnalysis.busyMinutesBreakdown.map(minuteData => `
 ${minuteData.rank}. ${minuteData.minute} - 總請求: ${minuteData.totalCount} 次 (涉及 ${minuteData.podCount} 個 Pod)
 ${minuteData.podBreakdown.slice(0, 5).map((podData, podIndex) => {
             const indicator = podIndex === 0 ? '🔥' : podIndex === 1 ? '🌡️' : '   ';

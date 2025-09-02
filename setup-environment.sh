@@ -132,11 +132,11 @@ check_gcloud_auth() {
             return 1
         fi
     else
-        # Check if credentials are valid and not expired
-        local file_age_days=$(find "$credentials_file" -mtime +1 2>/dev/null | wc -l)
+        # Check if credentials are valid and not expired (12 hours)
+        local file_age_hours=$(find "$credentials_file" -mmin +720 2>/dev/null | wc -l)
         
-        if [ "$file_age_days" -gt 0 ]; then
-            print_warning "Credentials are older than 24 hours. Refreshing..."
+        if [ "$file_age_hours" -gt 0 ]; then
+            print_warning "Credentials are older than 12 hours. Refreshing..."
             if gcloud auth application-default login; then
                 print_success "Credentials refreshed ✓"
             else

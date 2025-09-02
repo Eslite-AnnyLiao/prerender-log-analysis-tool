@@ -64,8 +64,8 @@ function checkAndRefreshGCloudAuth() {
     const credentialsPath = path.join(os.homedir(), '.config', 'gcloud', 'application_default_credentials.json');
     
     try {
-        // Refresh Google Cloud credentials (once per day)
-        if (!fs.existsSync(credentialsPath) || isFileOlderThanOneDay(credentialsPath)) {
+        // Refresh Google Cloud credentials (every 12 hours)
+        if (!fs.existsSync(credentialsPath) || isFileOlderThanTwelveHours(credentialsPath)) {
             log.warning('Google Cloud 認證已過期或不存在，正在重新認證...');
             execSync('gcloud auth application-default login', { stdio: 'inherit' });
             log.success('Google Cloud 認證完成');
@@ -80,15 +80,15 @@ function checkAndRefreshGCloudAuth() {
 }
 
 /**
- * Check if file is older than one day
+ * Check if file is older than twelve hours
  */
-function isFileOlderThanOneDay(filePath) {
+function isFileOlderThanTwelveHours(filePath) {
     try {
         const stats = fs.statSync(filePath);
         const now = new Date();
         const fileTime = new Date(stats.mtime);
         const hoursDiff = (now - fileTime) / (1000 * 60 * 60);
-        return hoursDiff > 24;
+        return hoursDiff > 12;
     } catch (error) {
         return true; // If we can't read the file, consider it as needing refresh
     }
@@ -228,13 +228,16 @@ function createProgram() {
         .description('Analyze data')
         .option('-d, --date <date>', 'Analyze single date (YYYYMMDD)')
         .option('-r, --range <range>', 'Analyze date range (YYYYMMDD ~ YYYYMMDD)')
+        .option('-f, --folder <folder>', 'Specify target folder (e.g., L1, L2, category, etc.)')
         .option('-s, --skip-check', 'Skip data file existence check')
         .action((options) => {
             if (!options.date && !options.range) {
                 log.error('請指定日期 (-d) 或日期範圍 (-r)');
                 log.info('範例:');
                 log.info('  npm run cli -- analyze -d 20250821');
+                log.info('  npm run cli -- analyze -d 20250821 -f L2');
                 log.info('  npm run cli -- analyze -r "20250821 ~ 20250827"');
+                log.info('  npm run cli -- analyze -r "20250821 ~ 20250827" -f L1');
                 process.exit(1);
             }
             
@@ -263,7 +266,11 @@ function createProgram() {
             }
             
             log.title(`📊 Analyzing data for ${dateRange}...`);
-            if (!executeCommand(`bash daily-log-analysis-script.sh "${dateRange}"`, `分析 ${dateRange} 的數據`)) {
+            const folderArg = options.folder ? ` "" "${options.folder}"` : '';
+            if (options.folder) {
+                log.info(`Target folder: ${options.folder}`);
+            }
+            if (!executeCommand(`bash daily-log-analysis-script.sh "${dateRange}"${folderArg}`, `分析 ${dateRange} 的數據${options.folder ? ` (資料夾: ${options.folder})` : ''}`)) {
                 process.exit(1);
             }
         });
@@ -543,6 +550,7 @@ function main() {
         console.log('  npm run cli query 20250821 https://example.com/          # 查詢日誌');
         console.log('  npm run cli query 20250821 https://example.com/ L2       # 查詢到指定資料夾');
         console.log('  npm run cli -- analyze -d 20250821                   # 分析數據 (需要 -- 分隔符)');
+        console.log('  npm run cli -- analyze -d 20250821 -f L2             # 分析指定資料夾數據');
         console.log('  npm run cli performance 20250821 10                  # 慢渲染分析 (10筆)');
         console.log('  npm run cli performance 20250821 5 L2                # 慢渲染分析 (L2資料夾)');
         console.log('  npm run cli weekly 20250821 20250827                 # 週報生成');

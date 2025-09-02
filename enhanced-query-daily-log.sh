@@ -225,8 +225,8 @@ check_credentials() {
     
     local credentials_file="$HOME/.config/gcloud/application_default_credentials.json"
     
-    # Refresh Google Cloud credentials (once per day)
-    if [ ! -f "$credentials_file" ] || [ $(find "$credentials_file" -mtime +1 2>/dev/null | wc -l) -gt 0 ]; then
+    # Refresh Google Cloud credentials (every 12 hours)
+    if [ ! -f "$credentials_file" ] || [ $(find "$credentials_file" -mmin +720 2>/dev/null | wc -l) -gt 0 ]; then
         print_warning "Google Cloud 認證已過期或不存在，正在重新認證..."
         if gcloud auth application-default login; then
             print_success "Google Cloud 認證完成"

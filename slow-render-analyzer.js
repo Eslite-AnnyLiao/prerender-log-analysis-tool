@@ -231,8 +231,8 @@ class SlowRenderAnalyzer {
     const os = require('os');
     const credentialsPath = path.join(os.homedir(), '.config', 'gcloud', 'application_default_credentials.json');
     
-    // Refresh Google Cloud credentials (once per day)
-    if (!fs.existsSync(credentialsPath) || this.isFileOlderThanOneDay(credentialsPath)) {
+    // Refresh Google Cloud credentials (every 12 hours)
+    if (!fs.existsSync(credentialsPath) || this.isFileOlderThanTwelveHours(credentialsPath)) {
       console.log('🔄 Google Cloud 認證已過期或不存在，正在重新認證...');
       try {
         execSync('gcloud auth application-default login', { stdio: 'inherit' });
@@ -242,17 +242,17 @@ class SlowRenderAnalyzer {
         process.exit(1);
       }
     } else {
-      console.log('✅ Google Cloud 認證有效 (不到 24 小時)');
+      console.log('✅ Google Cloud 認證有效 (不到 12 小時)');
     }
   }
 
-  isFileOlderThanOneDay(filePath) {
+  isFileOlderThanTwelveHours(filePath) {
     try {
       const stats = fs.statSync(filePath);
       const now = new Date();
       const fileTime = new Date(stats.mtime);
       const hoursDiff = (now - fileTime) / (1000 * 60 * 60);
-      return hoursDiff > 24;
+      return hoursDiff > 12;
     } catch (error) {
       return true; // If we can't read the file, consider it as needing refresh
     }

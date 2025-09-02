@@ -92,13 +92,13 @@ echo "Query URL: $URL"
 echo "Folder: $FOLDER_NAME"
 echo "Filename base: $FILENAME_BASE"
 
-# Refresh Google Cloud credentials (once per day)
+# Refresh Google Cloud credentials (every 12 hours)
 GOOGLE_APPLICATION_CREDENTIALS="$HOME/.config/gcloud/application_default_credentials.json"
-if [ ! -f "$GOOGLE_APPLICATION_CREDENTIALS" ] || [ $(find "$GOOGLE_APPLICATION_CREDENTIALS" -mtime +1 2>/dev/null | wc -l) -gt 0 ]; then
+if [ ! -f "$GOOGLE_APPLICATION_CREDENTIALS" ] || [ $(find "$GOOGLE_APPLICATION_CREDENTIALS" -mmin +720 2>/dev/null | wc -l) -gt 0 ]; then
     echo "Refreshing Google Cloud credentials..."
     gcloud auth application-default login
 else
-    echo "Google Cloud credentials are still valid (less than 24 hours old)"
+    echo "Google Cloud credentials are still valid (less than 12 hours old)"
 fi
 
 # First execution: 200-log analysis

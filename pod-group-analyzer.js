@@ -95,6 +95,36 @@ function getMinuteLabel(timestamp) {
     }
 }
 
+// 取得秒標籤 (用於每秒統計)
+function getSecondLabel(timestamp) {
+    if (!timestamp) return null;
+
+    try {
+        const cleanTimestamp = timestamp.replace(/'/g, '');
+        const utcDate = new Date(cleanTimestamp);
+
+        if (isNaN(utcDate.getTime())) {
+            return null;
+        }
+
+        // 台灣時區是 UTC+8，所以加上 8 小時的毫秒數
+        const taiwanTimestamp = utcDate.getTime() + (8 * 60 * 60 * 1000);
+        const taiwanDate = new Date(taiwanTimestamp);
+
+        // 格式化為 YYYY-MM-DD HH:mm:ss
+        const year = taiwanDate.getUTCFullYear();
+        const month = String(taiwanDate.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(taiwanDate.getUTCDate()).padStart(2, '0');
+        const hours = String(taiwanDate.getUTCHours()).padStart(2, '0');
+        const minutes = String(taiwanDate.getUTCMinutes()).padStart(2, '0');
+        const seconds = String(taiwanDate.getUTCSeconds()).padStart(2, '0');
+
+        return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    } catch (error) {
+        return null;
+    }
+}
+
 // 清理 pod name (移除引號)
 function cleanPodName(podName) {
     if (!podName) return 'unknown';
@@ -371,6 +401,45 @@ function calculatePerMinuteStats(minutelyData) {
     };
 }
 
+// 計算每秒統計資料
+function calculatePerSecondStats(secondlyData) {
+    const values = Object.values(secondlyData);
+
+    if (values.length === 0) {
+        return {
+            max: 0,
+            min: 0,
+            average: 0,
+            total: 0,
+            top10: [],
+            maxSecond: null
+        };
+    }
+
+    const max = Math.max(...values);
+    const min = Math.min(...values);
+    const sum = values.reduce((acc, val) => acc + val, 0);
+    const average = sum / values.length;
+
+    // 取得前10名秒數（按request數量排序）
+    const sortedSeconds = Object.entries(secondlyData)
+        .map(([second, count]) => ({ second, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 10);
+
+    // 找出最高請求數的秒
+    const maxSecond = sortedSeconds.length > 0 ? sortedSeconds[0] : null;
+
+    return {
+        max: max,
+        min: min,
+        average: Math.round(average * 100) / 100,
+        total: values.length,
+        top10: sortedSeconds,
+        maxSecond: maxSecond
+    };
+}
+
 // 讀取單個 CSV 檔案
 async function readCsvFile(filePath) {
     console.log(`📖 開始讀取檔案: ${filePath}`);
@@ -451,6 +520,7 @@ function analyzeSinglePod(userAgentRecords, renderTimeRecords, podName) {
     // User-Agent 相關資料結構
     const userAgentHourlyRequestData = {};
     const userAgentMinutelyRequestData = {};
+    const userAgentSecondlyRequestData = {};
     const userAgentData = {};
     const userAgentHourlyData = {};
 
@@ -473,6 +543,7 @@ function analyzeSinglePod(userAgentRecords, renderTimeRecords, podName) {
             const reqId = payloadInfo.reqId;
             const hourLabel = getHourLabel(row.timestamp);
             const minuteLabel = getMinuteLabel(row.timestamp);
+            const secondLabel = getSecondLabel(row.timestamp);
 
             // 建立 reqId 到 userAgent 的映射
             if (reqId && userAgent) {
@@ -493,6 +564,14 @@ function analyzeSinglePod(userAgentRecords, renderTimeRecords, podName) {
                     userAgentMinutelyRequestData[minuteLabel] = 0;
                 }
                 userAgentMinutelyRequestData[minuteLabel]++;
+            }
+
+            // 統計每秒資料筆數
+            if (secondLabel) {
+                if (!userAgentSecondlyRequestData[secondLabel]) {
+                    userAgentSecondlyRequestData[secondLabel] = 0;
+                }
+                userAgentSecondlyRequestData[secondLabel]++;
             }
 
             // 統計整體 User-Agent 數量
@@ -598,6 +677,9 @@ function analyzeSinglePod(userAgentRecords, renderTimeRecords, podName) {
     // 計算每分鐘統計資料
     const perMinuteStats = calculatePerMinuteStats(userAgentMinutelyRequestData);
 
+    // 計算每秒統計資料
+    const perSecondStats = calculatePerSecondStats(userAgentSecondlyRequestData);
+
     // 慢渲染時段的同時同分統計
     const slowRenderHourMinuteStats = analyzeSlowRenderHourMinute(slowRenderPeriods);
 
@@ -623,6 +705,8 @@ function analyzeSinglePod(userAgentRecords, renderTimeRecords, podName) {
         avgRequestPerHour: Math.round(avgPerHour * 100) / 100,
         requestMinutelyData: userAgentMinutelyRequestData,
         requestPerMinuteStats: perMinuteStats,
+        requestSecondlyData: userAgentSecondlyRequestData,
+        requestPerSecondStats: perSecondStats,
         slowRenderHourMinuteStats: slowRenderHourMinuteStats,
         urlAnalysis: urlAnalysis,
         userAgentAnalysis: userAgentAnalysis,
@@ -946,6 +1030,10 @@ function displayPodSummary(podResult) {
         console.log(`   慢渲染數量 (>8s): ${podResult.slowRenderPeriods.length}`);
     }
 
+    if (podResult.requestPerSecondStats.maxSecond) {
+        console.log(`   一秒內最高請求數: ${podResult.requestPerSecondStats.maxSecond.count} 次 (${podResult.requestPerSecondStats.maxSecond.second})`);
+    }
+
     if (podResult.urlAnalysis && podResult.urlAnalysis.overall_stats.unique_urls > 0) {
         console.log(`   不重複 URL 數: ${podResult.urlAnalysis.overall_stats.unique_urls}`);
         console.log(`   URL 重複率: ${podResult.urlAnalysis.overall_stats.duplicate_rate}`);
@@ -1138,11 +1226,13 @@ async function main() {
                 render_time_stats: pod.renderTimeStats,
                 avg_requests_per_hour: pod.avgRequestPerHour,
                 per_minute_stats: pod.requestPerMinuteStats,
+                per_second_stats: pod.requestPerSecondStats,
                 slow_render_hour_minute_stats: pod.slowRenderHourMinuteStats,
                 url_analysis: pod.urlAnalysis,
                 user_agent_analysis: pod.userAgentAnalysis,
                 hourly_request_data: pod.requestHourlyData,
                 minutely_request_data: pod.requestMinutelyData,
+                secondly_request_data: pod.requestSecondlyData,
                 slow_render_periods: pod.slowRenderPeriods
                     .filter(p => p.timestamp)
                     .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
@@ -1199,7 +1289,9 @@ async function main() {
                 p95_render_time: pod.renderTimeStats.pr95,
                 slow_render_count: pod.slowRenderPeriods.length,
                 unique_urls: pod.urlAnalysis ? pod.urlAnalysis.overall_stats.unique_urls : 0,
-                unique_user_agents: pod.userAgentAnalysis ? pod.userAgentAnalysis.overall_stats.unique_user_agents : 0
+                unique_user_agents: pod.userAgentAnalysis ? pod.userAgentAnalysis.overall_stats.unique_user_agents : 0,
+                max_requests_per_second: pod.requestPerSecondStats.maxSecond ? pod.requestPerSecondStats.maxSecond.count : 0,
+                max_second_timestamp: pod.requestPerSecondStats.maxSecond ? pod.requestPerSecondStats.maxSecond.second : null
             }))
         };
 
@@ -1299,6 +1391,12 @@ User-Agent 分析:
 ${pod.userAgentAnalysis ? `• 總請求數: ${pod.userAgentAnalysis.overall_stats.total_requests}
 • 不同 User-Agent 數: ${pod.userAgentAnalysis.overall_stats.unique_user_agents}` : '• 無 User-Agent 分析資料'}
 
+每秒請求統計:
+• 一秒內最高請求數: ${pod.requestPerSecondStats.maxSecond ? `${pod.requestPerSecondStats.maxSecond.count} 次` : '0 次'}
+• 最高請求發生時間: ${pod.requestPerSecondStats.maxSecond ? pod.requestPerSecondStats.maxSecond.second : 'N/A'}
+• 平均每秒請求數: ${pod.requestPerSecondStats.average}
+• 不同活躍秒數總數: ${pod.requestPerSecondStats.total}
+
 慢渲染統計:
 • 慢渲染記錄數: ${pod.slowRenderPeriods.length}
 ${pod.slowRenderPeriods.length > 0 ?
@@ -1330,6 +1428,8 @@ ${pod.slowRenderPeriods.length > 0 ?
         console.log('  • 包含 reqId 關聯分析和匹配率統計');
         console.log('  • 新增：系統最繁忙時段的跨 Pod 負載分布分析');
         console.log('  • 新增：可識別高峰時期哪個 Pod 負載最重');
+        console.log('  • 🆕 每個 Pod 一秒內最高請求數統計和詳細分析');
+        console.log('  • 🆕 精確到秒級的請求統計，提供更細粒度的負載分析');
 
     } catch (error) {
         console.error('❌ 分析過程中發生錯誤:', error.message);

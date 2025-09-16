@@ -271,12 +271,30 @@ function analyzeTextPayload(textPayload) {
     }
 
     // 格式3: 包含 X-Original-User-Agent 的請求
-    const type3Match = textPayload.match(/X-Original-User-Agent:\s*(.+?)(?:\s+https|$)/);
+    const type3Match = textPayload.match(/X-Original-User-Agent:\s*([^\n\r]+)/);
     if (type3Match) {
         const reqIdMatch = textPayload.match(/\[reqId:\s*([^\]]+)\]/);
+        
+        let fullLine = type3Match[1].trim();
+        
+        // 先移除最後的 reqId 部分 [reqId: ...]
+        fullLine = fullLine.replace(/\s+\[reqId:[^\]]+\]$/, '');
+        
+        // 然後移除最後的 URL 部分 (https://...)
+        // 使用非貪婪匹配，從最後一個 http 開始移除
+        fullLine = fullLine.replace(/\s+https?:\/\/\S+$/, '');
+        
+        const userAgent = fullLine.trim();
+        
+        // 正規化 Yahoo! Slurp 格式
+        // 將包含 sieve.k8s.crawler-production/ 的格式統一處理
+        const yahooSlurpPattern = /^(Mozilla\/5\.0 \(compatible; Yahoo! Slurp; http:\/\/help\.yahoo\.com\/help\/us\/ysearch\/slurp\)) sieve\.k8s\.crawler-production\/\d+-0$/;
+        const yahooSlurpMatch = userAgent.match(yahooSlurpPattern);
+        const finalUserAgent = yahooSlurpMatch ? yahooSlurpMatch[1] : userAgent;
+        
         return {
             type: 'user_agent',
-            userAgent: type3Match[1].trim(),
+            userAgent: finalUserAgent,
             reqId: reqIdMatch ? reqIdMatch[1].trim() : null
         };
     }

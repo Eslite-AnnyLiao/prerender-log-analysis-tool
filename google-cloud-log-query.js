@@ -59,33 +59,57 @@ class LogQueryProcessor {
     this.outputFilename = outputFilename;
   }
 
-  getTimeRange(targetDate = null) {
+  getTimeRange(targetDate = null, startDate = null, endDate = null) {
     const timezone = 'Asia/Taipei';
-    let queryDate;
+    let startTime, endTime, dateString;
     
-    if (targetDate) {
-      queryDate = moment.tz(targetDate, timezone);
-    } else {
-      const today = moment.tz(timezone);
-      queryDate = today.clone().subtract(1, 'day');
+    // 如果指定了開始和結束日期（時間區間查詢）
+    if (startDate && endDate) {
+      const startMoment = moment.tz(startDate, timezone).startOf('day');
+      const endMoment = moment.tz(endDate, timezone).endOf('day');
+      
+      startTime = startMoment.format('YYYY-MM-DDTHH:mm:ss.SSS') + '+08:00';
+      endTime = endMoment.format('YYYY-MM-DDTHH:mm:ss.SSS') + '+08:00';
+      dateString = `${startDate}_to_${endDate}`;
     }
-    
-    // 直接使用台北時間，不轉換為 UTC
-    const startTime = queryDate.startOf('day').format('YYYY-MM-DDTHH:mm:ss.SSS') + '+08:00';
-    const endTime = queryDate.endOf('day').format('YYYY-MM-DDTHH:mm:ss.SSS') + '+08:00';
+    // 如果只指定了開始日期，結束日期使用今天
+    else if (startDate && !endDate) {
+      const startMoment = moment.tz(startDate, timezone).startOf('day');
+      const endMoment = moment.tz(timezone).endOf('day');
+      
+      startTime = startMoment.format('YYYY-MM-DDTHH:mm:ss.SSS') + '+08:00';
+      endTime = endMoment.format('YYYY-MM-DDTHH:mm:ss.SSS') + '+08:00';
+      dateString = `${startDate}_to_${moment.tz(timezone).format('YYYY-MM-DD')}`;
+    }
+    // 原有的單日查詢邏輯
+    else {
+      let queryDate;
+      
+      if (targetDate) {
+        queryDate = moment.tz(targetDate, timezone);
+      } else {
+        const today = moment.tz(timezone);
+        queryDate = today.clone().subtract(1, 'day');
+      }
+      
+      // 直接使用台北時間，不轉換為 UTC
+      startTime = queryDate.startOf('day').format('YYYY-MM-DDTHH:mm:ss.SSS') + '+08:00';
+      endTime = queryDate.endOf('day').format('YYYY-MM-DDTHH:mm:ss.SSS') + '+08:00';
+      dateString = queryDate.format('YYYY-MM-DD');
+    }
     
     console.log(`🕐 時間範圍調試: ${startTime} 到 ${endTime}`);
     
     return {
       start: startTime,
       end: endTime,
-      dateString: queryDate.format('YYYY-MM-DD')
+      dateString: dateString
     };
   }
 
-  buildFilter(additionalConditions = '', targetDate = null) {
+  buildFilter(additionalConditions = '', targetDate = null, startDate = null, endDate = null) {
     const baseCondition = 'resource.labels.container_name="prerender"';
-    const timeRange = this.getTimeRange(targetDate);
+    const timeRange = this.getTimeRange(targetDate, startDate, endDate);
     
     let filter = `${baseCondition}`;
     
@@ -121,12 +145,18 @@ class LogQueryProcessor {
     this.csvData.push(csvRow);
   }
 
-  async queryAllLogs(additionalConditions = '', targetDate = null) {
+  async queryAllLogs(additionalConditions = '', targetDate = null, startDate = null, endDate = null) {
     try {
-      const { filter, timeRange } = this.buildFilter(additionalConditions, targetDate);
+      const { filter, timeRange } = this.buildFilter(additionalConditions, targetDate, startDate, endDate);
       
       console.log('🔍 Google Cloud Logging 查詢工具');
-      console.log(`📅 查詢時間範圍: ${timeRange.dateString} 00:00:00 ~ 23:59:59`);
+      if (startDate && endDate) {
+        console.log(`📅 查詢時間範圍: ${startDate} 00:00:00 ~ ${endDate} 23:59:59`);
+      } else if (startDate && !endDate) {
+        console.log(`📅 查詢時間範圍: ${startDate} 00:00:00 ~ 今天 23:59:59`);
+      } else {
+        console.log(`📅 查詢時間範圍: ${timeRange.dateString} 00:00:00 ~ 23:59:59`);
+      }
       console.log(`🔎 查詢條件: ${filter}`);
       console.log('');
 
@@ -249,6 +279,8 @@ class LogQueryProcessor {
 async function main() {
   const args = process.argv.slice(2);
   let targetDate = null;
+  let startDate = null;
+  let endDate = null;
   let additionalConditions = '';
   let outputDir = null;
   let outputFilename = null;
@@ -259,8 +291,19 @@ async function main() {
     const arg = args[i];
     
     // 檢查日期參數
-    if (/^\d{4}-\d{2}-\d{2}$/.test(arg)) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(arg) && !startDate && !endDate) {
       targetDate = arg;
+    }
+    // 檢查開始日期參數
+    else if (arg === '--start-date' && i + 1 < args.length) {
+      startDate = args[i + 1];
+      targetDate = null; // 如果使用區間查詢，清除單日查詢
+      i++; // 跳過下一個參數
+    }
+    // 檢查結束日期參數
+    else if (arg === '--end-date' && i + 1 < args.length) {
+      endDate = args[i + 1];
+      i++; // 跳過下一個參數
     }
     // 檢查輸出目錄參數
     else if (arg === '--output-dir' && i + 1 < args.length) {
@@ -286,6 +329,13 @@ async function main() {
   if (targetDate) {
     console.log(`📅 查詢指定日期: ${targetDate}`);
   }
+  if (startDate || endDate) {
+    if (startDate && endDate) {
+      console.log(`📅 查詢日期範圍: ${startDate} ~ ${endDate}`);
+    } else if (startDate && !endDate) {
+      console.log(`📅 查詢日期範圍: ${startDate} ~ 今天`);
+    }
+  }
   if (additionalConditions) {
     console.log(`🔧 額外查詢條件: ${additionalConditions}`);
   }
@@ -298,7 +348,7 @@ async function main() {
   console.log('');
   
   try {
-    const result = await processor.queryAllLogs(additionalConditions, targetDate);
+    const result = await processor.queryAllLogs(additionalConditions, targetDate, startDate, endDate);
     console.log(`\n🎉 處理完成: ${result.filename}`);
   } catch (error) {
     console.error('❌ 主程序執行失敗:', error.message);
@@ -317,13 +367,25 @@ async function main() {
     console.log('node google-cloud-log-query.js [選項] [日期] [查詢條件]');
     console.log('');
     console.log('選項:');
+    console.log('  --start-date <日期>    指定開始日期 (YYYY-MM-DD)');
+    console.log('  --end-date <日期>      指定結束日期 (YYYY-MM-DD)');
     console.log('  --output-dir <路徑>    指定輸出目錄');
     console.log('  --filename <檔名>      指定輸出檔名');
     console.log('');
     console.log('範例:');
-    console.log('  node google-cloud-log-query.js 2025-08-18');
-    console.log('  node google-cloud-log-query.js --output-dir ./results --filename my_logs.csv 2025-08-18');
-    console.log('  node google-cloud-log-query.js 2025-08-18 "severity>=ERROR"');
+    console.log('  # 單日查詢 (原有功能)');
+    console.log('  node google-cloud-log-query.js 2024-08-18');
+    console.log('  node google-cloud-log-query.js 2024-08-18 "severity>=ERROR"');
+    console.log('');
+    console.log('  # 時間區間查詢 (新功能)');
+    console.log('  node google-cloud-log-query.js --start-date 2024-07-24 --end-date 2024-09-15');
+    console.log('  node google-cloud-log-query.js --start-date 2024-07-24 --end-date 2024-09-15 \'textPayload:("X-Original-User-Agent:" AND "https://www.eslite.com/category/")\'');
+    console.log('');
+    console.log('  # 從指定日期到今天');
+    console.log('  node google-cloud-log-query.js --start-date 2024-07-24');
+    console.log('');
+    console.log('  # 指定輸出選項');
+    console.log('  node google-cloud-log-query.js --output-dir ./results --filename my_logs.csv --start-date 2024-07-24 --end-date 2024-09-15');
   }
 }
 

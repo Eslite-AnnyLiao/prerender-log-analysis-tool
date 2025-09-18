@@ -825,7 +825,7 @@ async function analyzeTwoCsvFiles(userAgentFile, renderTimeFile) {
         });
 
         console.log(`✅ Render Time 檔案處理完成，有效記錄: ${renderTimeProcessedCount} 筆`);
-        console.log(`📊 reqId 匹配成功: ${reqIdMatchedCount} 筆 (${Math.round((reqIdMatchedCount / renderTimeProcessedCount) * 100)}%)`);
+        console.log(`📊 reqId 匹配成功: ${reqIdMatchedCount} 筆 (${Math.round((reqIdMatchedCount / reqIdToUserAgent.size) * 100)}%)`);
 
         // 計算統計結果
         console.log('\n🧮 計算統計結果...');
@@ -891,7 +891,7 @@ async function analyzeTwoCsvFiles(userAgentFile, renderTimeFile) {
                 totalReqIds: reqIdToUserAgent.size,
                 matchedRenderRecords: reqIdMatchedCount,
                 totalRenderRecords: renderTimeProcessedCount,
-                matchingRate: Math.round((reqIdMatchedCount / renderTimeProcessedCount) * 10000) / 100
+                matchingRate: Math.round((reqIdMatchedCount / reqIdToUserAgent.size) * 10000) / 100
             },
 
             // 資料來源資訊

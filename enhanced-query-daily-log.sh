@@ -388,7 +388,7 @@ main() {
     
     # First execution: 200-log analysis
     print_step "4.1" "查詢 HTTP 200 回應日誌"
-    local search_200="SEARCH(\"got 200 in ${url}\")"
+    local search_200="SEARCH(\"\`got 200 in\` \`${url}\` \")"
     if ! execute_query \
         "HTTP 200 回應" \
         "./to-analyze-daily-data/200-log/${folder_name}" \
@@ -405,7 +405,7 @@ main() {
     
     # Second execution: user-agent-log analysis  
     print_step "4.2" "查詢 User-Agent 日誌"
-    local search_ua="SEARCH(\"\`X-Original-User-Agent:\` \`${url}\`\")"
+    local search_ua="SEARCH(\"\`X-Original-User-Agent:\` \`${url}\` \")"
     if ! execute_query \
         "User-Agent" \
         "./to-analyze-daily-data/user-agent-log/${folder_name}" \

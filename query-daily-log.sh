@@ -106,7 +106,7 @@ echo "Running 200-log analysis..."
 # Create directory if it doesn't exist
 mkdir -p "./to-analyze-daily-data/200-log/${FOLDER_NAME}"
 
-node google-cloud-log-query.js --output-dir "./to-analyze-daily-data/200-log/${FOLDER_NAME}" --filename ${FILENAME_BASE}.csv ${FORMATTED_DATE} "SEARCH(\"got 200 in ${URL}\")"
+node google-cloud-log-query.js --output-dir "./to-analyze-daily-data/200-log/${FOLDER_NAME}" --filename ${FILENAME_BASE}.csv ${FORMATTED_DATE} "SEARCH(\"\`got 200 in\` \`${URL}\` \")"
 
 if [ $? -eq 0 ]; then
     echo "✓ 200-log analysis completed successfully"
@@ -123,7 +123,7 @@ echo "Running user-agent-log analysis..."
 # Create directory if it doesn't exist
 mkdir -p "./to-analyze-daily-data/user-agent-log/${FOLDER_NAME}"
 
-node google-cloud-log-query.js --output-dir "./to-analyze-daily-data/user-agent-log/${FOLDER_NAME}" --filename user-agent-${FILENAME_BASE}.csv ${FORMATTED_DATE} "SEARCH(\"\`X-Original-User-Agent:\` \`${URL}\`\")"
+node google-cloud-log-query.js --output-dir "./to-analyze-daily-data/user-agent-log/${FOLDER_NAME}" --filename user-agent-${FILENAME_BASE}.csv ${FORMATTED_DATE} "SEARCH(\"\`X-Original-User-Agent:\` \`${URL}\` \")"
 
 if [ $? -eq 0 ]; then
     echo "✓ User-agent-log analysis completed successfully"

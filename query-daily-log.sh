@@ -132,4 +132,21 @@ else
     exit 1
 fi
 
+echo "Waiting 30 sec before next execution..."
+sleep 30
+
+# Third execution: in-flight requests log analysis
+echo "Running in-flight requests log analysis..."
+# Create directory if it doesn't exist
+mkdir -p "./to-analyze-daily-data/in-flight-log/${FOLDER_NAME}"
+
+node google-cloud-log-query.js --output-dir "./to-analyze-daily-data/in-flight-log/${FOLDER_NAME}" --filename in-flight-${FILENAME_BASE}.csv ${FORMATTED_DATE} "textPayload: \"Adding request to in-flight\" AND textPayload!=\"Adding request to in-flight: 1 requests in flight\" AND textPayload!=\"Adding request to in-flight: 2 requests in flight\""
+
+if [ $? -eq 0 ]; then
+    echo "✓ In-flight requests log analysis completed successfully"
+else
+    echo "✗ In-flight requests log analysis failed"
+    exit 1
+fi
+
 echo "Daily analysis completed for date: $DATE"

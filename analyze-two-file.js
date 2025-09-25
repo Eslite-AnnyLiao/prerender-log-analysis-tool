@@ -1003,6 +1003,7 @@ function calculateRenderTimeStats(inputData) {
             countAbove8000to20000: 0,
             countAbove20000to45000: 0,
             countAbove45000: 0,
+            countAbove100000: 0,
             total: 0
         };
     }
@@ -1036,6 +1037,7 @@ function calculateRenderTimeStats(inputData) {
             countAbove8000to20000: 0,
             countAbove20000to45000: 0,
             countAbove45000: 0,
+            countAbove100000: 0,
             total: 0
         };
     }
@@ -1056,6 +1058,7 @@ function calculateRenderTimeStats(inputData) {
     const countAbove8000to20000 = validTimes.filter(time => time > 8000 && time <= 20000).length;
     const countAbove20000to45000 = validTimes.filter(time => time > 20000 && time < 45000).length;
     const countAbove45000 = validTimes.filter(time => time > 45000).length;
+    const countAbove100000 = validTimes.filter(time => time >= 100000).length;
 
     // 5. 計算各種百分位數
     const median = calculatePercentile(sortedTimes, 50);    // P50 (中位數)
@@ -1077,6 +1080,7 @@ function calculateRenderTimeStats(inputData) {
         countAbove8000to20000: countAbove8000to20000,
         countAbove20000to45000: countAbove20000to45000,
         countAbove45000: countAbove45000,
+        countAbove100000: countAbove100000,
         total: validTimes.length,
         // 額外資訊
         originalTotal: renderTimes.length,
@@ -1201,6 +1205,7 @@ async function main() {
         console.log(`  • 慢渲染 (8-20秒)的總數: ${result.renderTimeStats.countAbove8000to20000}`);
         console.log(`  • 異常渲染 (20-45秒)的總數: ${result.renderTimeStats.countAbove20000to45000}`);
         console.log(`  • 超時 (>45秒)的總數: ${result.renderTimeStats.countAbove45000}`);
+        console.log(`  • 嚴重超時 (>100秒)的總數: ${result.renderTimeStats.countAbove100000}`);
         console.log(`  • 總資料筆數: ${result.renderTimeStats.total}`);
 
         console.log(`\n⏰ 每小時資料筆數平均值 (基於 User-Agent 檔案): ${result.avgRequestPerHour}`);
@@ -1461,6 +1466,7 @@ async function main() {
                 count_above_8000to20000ms: result.renderTimeStats.countAbove8000to20000,
                 count_above_20000to45000ms: result.renderTimeStats.countAbove20000to45000,
                 count_above_45000ms: result.renderTimeStats.countAbove45000,
+                count_above_100000ms: result.renderTimeStats.countAbove100000,
                 total_records: result.renderTimeStats.total
             },
             avg_requests_per_hour: result.avgRequestPerHour,
@@ -1657,6 +1663,7 @@ Render Time 統計:
 • 慢渲染 (8-20秒)的總數: ${result.renderTimeStats.countAbove8000to20000}
 • 異常渲染 (20-45秒)的總數: ${result.renderTimeStats.countAbove20000to45000}
 • 超時 (>45秒)的總數: ${result.renderTimeStats.countAbove45000}
+• 嚴重超時 (>100秒)的總數: ${result.renderTimeStats.countAbove100000}
 • 總資料筆數: ${result.renderTimeStats.total}
 
 每小時資料筆數平均值 (基於 User-Agent 檔案): ${result.avgRequestPerHour}

@@ -174,10 +174,9 @@ show_usage() {
     echo "  $0 20250820 https://example.com/products/ products"
     echo ""
     echo "說明:"
-    echo "  此腳本會查詢指定日期和URL的三種日誌:"
+    echo "  此腳本會查詢指定日期和URL的兩種日誌:"
     echo "  1. HTTP 200 回應日誌 (渲染時間數據)"
     echo "  2. User-Agent 日誌 (用戶代理數據)"
-    echo "  3. In-Flight Requests 日誌 (併發請求數據)"
     echo ""
     echo "資料夾自動映射:"
     echo "  如果未指定資料夾，會按以下規則自動生成:"
@@ -189,7 +188,6 @@ show_usage() {
     echo "輸出檔案位置:"
     echo "  - ./to-analyze-daily-data/200-log/[folder]/<filename>.csv"
     echo "  - ./to-analyze-daily-data/user-agent-log/[folder]/user-agent-<filename>.csv"
-    echo "  - ./to-analyze-daily-data/in-flight-log/[folder]/in-flight-<filename>.csv"
 }
 
 # Check prerequisites
@@ -250,7 +248,6 @@ create_directories() {
     local dirs=(
         "./to-analyze-daily-data/200-log/${folder_name}"
         "./to-analyze-daily-data/user-agent-log/${folder_name}"
-        "./to-analyze-daily-data/in-flight-log/${folder_name}"
     )
     
     for dir in "${dirs[@]}"; do
@@ -386,7 +383,7 @@ main() {
     
     echo
     print_step 4 "開始日誌查詢"
-    print_info "此過程將分三個步驟執行，每步驟之間會等待 30 秒"
+    print_info "此過程將分兩個步驟執行，每步驟之間會等待 30 秒"
     echo
     
     # First execution: 200-log analysis
@@ -415,23 +412,6 @@ main() {
         "user-agent-${filename_base}.csv" \
         "$formatted_date" \
         "$search_ua"; then
-        exit 1
-    fi
-    
-    echo
-    print_info "等待 30 秒後執行下一個查詢 (避免 API 限制)..."
-    show_progress 30
-    echo
-    
-    # Third execution: in-flight requests log analysis
-    print_step "4.3" "查詢 In-Flight Requests 日誌"
-    local search_inflight="textPayload: \"Adding request to in-flight\" AND textPayload!=\"Adding request to in-flight: 1 requests in flight\" AND textPayload!=\"Adding request to in-flight: 2 requests in flight\""
-    if ! execute_query \
-        "In-Flight Requests" \
-        "./to-analyze-daily-data/in-flight-log/${folder_name}" \
-        "in-flight-${filename_base}.csv" \
-        "$formatted_date" \
-        "$search_inflight"; then
         exit 1
     fi
     

@@ -35,6 +35,8 @@ class JsonAggregator {
             crawler_aggregated: {
                 traditional_search_engines: {
                     googlebot: 0,
+                    googlebot_mobile: 0,
+                    googlebot_desktop: 0,
                     bingbot: 0,
                     amazonbot: 0,
                     other_search_engines: 0
@@ -176,7 +178,12 @@ class JsonAggregator {
 
         // 傳統搜索引擎
         if (ua.includes('googlebot')) {
-            return { category: 'traditional_search_engines', type: 'googlebot', name: 'Googlebot' };
+            // 檢查是否為 mobile 版本
+            if (ua.includes('mobile') || ua.includes('android') || ua.includes('iphone')) {
+                return { category: 'traditional_search_engines', type: 'googlebot_mobile', name: 'Googlebot Mobile' };
+            } else {
+                return { category: 'traditional_search_engines', type: 'googlebot_desktop', name: 'Googlebot Desktop' };
+            }
         }
         if (ua.includes('bingbot')) {
             return { category: 'traditional_search_engines', type: 'bingbot', name: 'Bingbot' };
@@ -864,8 +871,16 @@ class JsonAggregator {
         // 傳統搜索引擎統計
         const traditionalSearchEngines = {
             googlebot: {
-                visits: crawlerData.traditional_search_engines.googlebot,
-                percentage: calculatePercentage(crawlerData.traditional_search_engines.googlebot)
+                visits: crawlerData.traditional_search_engines.googlebot_mobile + crawlerData.traditional_search_engines.googlebot_desktop,
+                percentage: calculatePercentage(crawlerData.traditional_search_engines.googlebot_mobile + crawlerData.traditional_search_engines.googlebot_desktop)
+            },
+            googlebot_mobile: {
+                visits: crawlerData.traditional_search_engines.googlebot_mobile,
+                percentage: calculatePercentage(crawlerData.traditional_search_engines.googlebot_mobile)
+            },
+            googlebot_desktop: {
+                visits: crawlerData.traditional_search_engines.googlebot_desktop,
+                percentage: calculatePercentage(crawlerData.traditional_search_engines.googlebot_desktop)
             },
             bingbot: {
                 visits: crawlerData.traditional_search_engines.bingbot,
@@ -1074,6 +1089,8 @@ ${prerenderStats.detailed_breakdown.slice(0, 10).map((file, index) => {
 📊 總爬蟲佔比: ${crawlerStats.overall_crawler_stats.total_crawler_visits.toLocaleString()} 次訪問
 🔍 傳統搜索引擎 - 總計: ${crawlerStats.traditional_search_engines.total.percentage}% (${crawlerStats.traditional_search_engines.total.visits.toLocaleString()} 次)
 ├─ Googlebot:           ${crawlerStats.traditional_search_engines.googlebot.percentage}% (${crawlerStats.traditional_search_engines.googlebot.visits.toLocaleString()} 次)
+│  ├─ Mobile:           ${crawlerStats.traditional_search_engines.googlebot_mobile.percentage}% (${crawlerStats.traditional_search_engines.googlebot_mobile.visits.toLocaleString()} 次)
+│  └─ Desktop:          ${crawlerStats.traditional_search_engines.googlebot_desktop.percentage}% (${crawlerStats.traditional_search_engines.googlebot_desktop.visits.toLocaleString()} 次)
 ├─ Bingbot:             ${crawlerStats.traditional_search_engines.bingbot.percentage}% (${crawlerStats.traditional_search_engines.bingbot.visits.toLocaleString()} 次)
 ├─ Amazonbot:           ${crawlerStats.traditional_search_engines.amazonbot.percentage}% (${crawlerStats.traditional_search_engines.amazonbot.visits.toLocaleString()} 次)
 └─ 其他搜索引擎:         ${crawlerStats.traditional_search_engines.other_search_engines.percentage}% (${crawlerStats.traditional_search_engines.other_search_engines.visits.toLocaleString()} 次)

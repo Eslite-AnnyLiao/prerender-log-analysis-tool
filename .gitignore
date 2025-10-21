@@ -31,6 +31,7 @@ daily-pod-analysis-result/
 performance-analyze-result/
 weekly_aggregated_results/
 slow-render-periods-log/
+user-angents-analysis/
 
 # Data Files (CSV, JSON logs)
 to-analyze-daily-data/

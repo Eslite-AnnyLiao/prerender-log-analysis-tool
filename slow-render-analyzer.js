@@ -10,6 +10,21 @@ class SlowRenderAnalyzer {
   }
 
   parseArguments() {
+    if (this.args.length < 1) {
+      this.showUsage();
+      process.exit(1);
+    }
+
+    // Check if first argument is --json flag
+    if (this.args[0] === '--json') {
+      if (this.args.length < 2) {
+        console.error('❌ 使用 --json 時需要提供 JSON 檔案路徑');
+        process.exit(1);
+      }
+      return { mode: 'json', jsonFile: this.args[1] };
+    }
+
+    // Original mode: date and count
     if (this.args.length < 2) {
       this.showUsage();
       process.exit(1);
@@ -30,7 +45,7 @@ class SlowRenderAnalyzer {
       process.exit(1);
     }
 
-    return { dateStr, count, folder };
+    return { mode: 'extract', dateStr, count, folder };
   }
 
   formatDateForQuery(dateStr) {
@@ -262,7 +277,15 @@ class SlowRenderAnalyzer {
     console.log('🚀 慢渲染日誌分析工具啟動');
     console.log('=' .repeat(50));
 
-    const { dateStr, count, folder } = this.parseArguments();
+    const args = this.parseArguments();
+    
+    if (args.mode === 'json') {
+      // JSON mode: process existing JSON file
+      return this.processExistingJson(args.jsonFile);
+    }
+    
+    // Extract mode: original functionality
+    const { dateStr, count, folder } = args;
     
     // Check Google Cloud authentication before proceeding
     console.log('\n🔐 檢查 Google Cloud 認證...');
@@ -313,19 +336,108 @@ class SlowRenderAnalyzer {
     this.executePerformanceAnalyzer(outputDir, folder);
   }
 
+  async processExistingJson(jsonFile) {
+    console.log('\n📁 JSON 模式：處理現有的 JSON 檔案');
+    console.log('-'.repeat(40));
+    
+    if (!fs.existsSync(jsonFile)) {
+      console.error(`❌ 找不到檔案: ${jsonFile}`);
+      process.exit(1);
+    }
+
+    console.log(`📖 讀取檔案: ${jsonFile}`);
+    
+    try {
+      const data = JSON.parse(fs.readFileSync(jsonFile, 'utf8'));
+      
+      if (!Array.isArray(data)) {
+        console.error('❌ JSON 檔案格式錯誤，應為陣列格式');
+        process.exit(1);
+      }
+
+      console.log(`📊 找到 ${data.length} 筆記錄`);
+      
+      // Check Google Cloud authentication
+      console.log('\n🔐 檢查 Google Cloud 認證...');
+      this.checkAndRefreshGCloudAuth();
+
+      // Determine output directory based on file path
+      const fileName = path.basename(jsonFile, '.json');
+      const fileDir = path.dirname(jsonFile);
+      const outputDirName = fileName.includes('category') ? 'category' : 'default';
+      const dateMatch = fileName.match(/(\d{8})/);
+      const dateStr = dateMatch ? dateMatch[1] : new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      
+      const outputDir = `./to-analyze-performance-data/${dateStr}/${outputDirName}`;
+      if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+        console.log(`📁 建立輸出目錄: ${outputDir}`);
+      }
+
+      // Process each record
+      console.log('\n🔄 開始執行 Google Cloud 日誌查詢...');
+      console.log('-'.repeat(50));
+
+      for (let i = 0; i < data.length; i++) {
+        const record = data[i];
+        const recordId = record.id || `${dateStr}-${(i + 1).toString().padStart(4, '0')}`;
+        
+        console.log(`\n[${i + 1}/${data.length}]`);
+        console.log(`🔍 執行查詢 [ID: ${recordId}]: ${record.pod_name} / ${record.req_id}`);
+        
+        const filename = `logs-${recordId}.csv`;
+        const dateFormatted = this.formatDateForQuery(dateStr);
+        const query = `resource.labels.pod_name="${record.pod_name}" AND SEARCH("${record.req_id}")`;
+        
+        try {
+          const command = `node google-cloud-log-query.js --output-dir ${outputDir} --filename ${filename} ${dateFormatted} '${query}'`;
+          console.log(`📝 指令: ${command}`);
+          
+          execSync(command, { stdio: 'inherit' });
+          console.log(`✅ 完成查詢 [ID: ${recordId}]`);
+          
+          // Add delay between requests
+          if (i < data.length - 1) {
+            console.log('⏳ 等待 2 秒...');
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
+        } catch (error) {
+          console.error(`❌ 查詢失敗 [ID: ${recordId}]: ${error.message}`);
+        }
+      }
+
+      console.log('\n🎉 所有查詢完成！');
+      console.log(`📁 結果檔案存放在: ${outputDir}`);
+      
+      // Execute performance analyzer
+      console.log('\n🔬 開始執行效能分析...');
+      console.log('-'.repeat(50));
+      this.executePerformanceAnalyzer(outputDir, outputDirName);
+      
+    } catch (error) {
+      console.error(`❌ 處理檔案時發生錯誤: ${error.message}`);
+      process.exit(1);
+    }
+  }
+
   showUsage() {
     console.log('\n📖 慢渲染日誌分析工具');
     console.log('=' .repeat(30));
     console.log('\n使用方法:');
-    console.log('  node slow-render-analyzer.js <日期> <分析筆數> [資料夾]');
+    console.log('  模式一：從原始資料分析');
+    console.log('    node slow-render-analyzer.js <日期> <分析筆數> [資料夾]');
+    console.log('  模式二：處理現有 JSON 檔案');
+    console.log('    node slow-render-analyzer.js --json <JSON檔案路徑>');
     console.log('\n參數說明:');
     console.log('  日期        YYYYMMDD 格式 (例如: 20250819)');
     console.log('  分析筆數    要分析的記錄數量 (正整數)');
-    console.log('  資料夾      可選，指定要分析的資料夾 (L1, L2, 等)');
+    console.log('  資料夾      可選，指定要分析的資料夾 (L1, L2, category)');
+    console.log('  JSON檔案路徑 現有的慢渲染記錄 JSON 檔案');
     console.log('\n範例:');
     console.log('  node slow-render-analyzer.js 20250819 10');
     console.log('  node slow-render-analyzer.js 20250818 5 L2');
-    console.log('  node slow-render-analyzer.js 20250820 15 L1');
+    console.log('  node slow-render-analyzer.js 20250820 15 category');
+    console.log('  node slow-render-analyzer.js --json slow-render-periods-log/category/slow_render_periods_20251019.json');
     console.log('\n功能說明:');
     console.log('  1. 從 daily-analysis-result/[資料夾/]分析檔讀取慢渲染資料');
     console.log('  2. 取出指定筆數的記錄並加上 ID');

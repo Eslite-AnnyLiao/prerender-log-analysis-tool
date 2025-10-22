@@ -57,6 +57,7 @@ class LogQueryProcessor {
     this.errorCount = 0;
     this.outputDir = outputDir;
     this.outputFilename = outputFilename;
+    this.currentQueryProcessedCount = 0; // 當前查詢處理的記錄數
   }
 
   getTimeRange(targetDate = null, startDate = null, endDate = null) {
@@ -109,7 +110,6 @@ class LogQueryProcessor {
 
   buildFilter(additionalConditions = '', targetDate = null, startDate = null, endDate = null) {
     const baseCondition = 'resource.labels.container_name="prerender"';
-    const timeRange = this.getTimeRange(targetDate, startDate, endDate);
     
     let filter = `${baseCondition}`;
     
@@ -117,10 +117,25 @@ class LogQueryProcessor {
       filter += ` AND ${additionalConditions}`;
     }
     
-    filter += ` AND timestamp >= "${timeRange.start}"`;
-    filter += ` AND timestamp <= "${timeRange.end}"`;
+    // 只有在 additionalConditions 不包含 timestamp 條件時才加入日期範圍
+    const hasTimestampCondition = additionalConditions && additionalConditions.includes('timestamp');
     
-    return { filter: filter.trim(), timeRange };
+    if (!hasTimestampCondition) {
+      const timeRange = this.getTimeRange(targetDate, startDate, endDate);
+      filter += ` AND timestamp >= "${timeRange.start}"`;
+      filter += ` AND timestamp <= "${timeRange.end}"`;
+      return { filter: filter.trim(), timeRange };
+    }
+    
+    // 如果已有 timestamp 條件，返回簡化的 timeRange 物件
+    return { 
+      filter: filter.trim(), 
+      timeRange: { 
+        dateString: 'custom_timestamp_range',
+        start: null,
+        end: null
+      }
+    };
   }
 
   escapeCsvValue(value) {
@@ -132,7 +147,18 @@ class LogQueryProcessor {
   }
 
   processLogEntry(entry) {
-    const timestamp = entry.metadata.timestamp || '';
+    // 保持原始 ISO 格式的時間戳記
+    let timestamp = '';
+    if (entry.metadata.timestamp) {
+      // 如果是 Date 物件，轉換為 ISO 字串
+      if (entry.metadata.timestamp instanceof Date) {
+        timestamp = entry.metadata.timestamp.toISOString();
+      } else {
+        // 如果已經是字串，直接使用
+        timestamp = entry.metadata.timestamp.toString();
+      }
+    }
+    
     const textPayload = typeof entry.data === 'string' ? entry.data : JSON.stringify(entry.data);
     const podName = entry.metadata.resource?.labels?.pod_name || 'N/A';
     
@@ -161,6 +187,7 @@ class LogQueryProcessor {
       console.log('');
 
       this.csvData = ['timestamp,textPayload,resource.labels.pod_name'];
+      this.currentQueryProcessedCount = 0; // 重置當前查詢計數器
       
       const options = {
         filter: filter,
@@ -202,6 +229,7 @@ class LogQueryProcessor {
             try {
               this.processLogEntry(entry);
               this.processedCount++;
+              this.currentQueryProcessedCount++;
             } catch (error) {
               this.errorCount++;
               console.warn(`⚠️  處理單筆記錄失敗: ${error.message}`);
@@ -267,6 +295,7 @@ class LogQueryProcessor {
         filename,
         filePath,
         processedCount: this.processedCount,
+        currentQueryProcessedCount: this.currentQueryProcessedCount,
         errorCount: this.errorCount
       };
     } catch (error) {

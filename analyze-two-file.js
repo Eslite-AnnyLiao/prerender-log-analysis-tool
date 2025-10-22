@@ -38,6 +38,36 @@ function convertToTaiwanTime(timestamp) {
     }
 }
 
+// 轉換為 Google Cloud Trace 日誌可查詢的格式 (ISO 8601)
+function convertToGoogleCloudFormat(timestamp) {
+    if (!timestamp) return null;
+
+    try {
+        // 如果已經是 ISO 8601 格式，直接返回
+        if (typeof timestamp === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(timestamp)) {
+            return timestamp;
+        }
+
+        // 移除引號並解析時間
+        const cleanTimestamp = timestamp.replace(/'/g, '');
+        
+        // 解析 UTC 時間
+        const utcDate = new Date(cleanTimestamp);
+        
+        // 檢查日期是否有效
+        if (isNaN(utcDate.getTime())) {
+            throw new Error('無效的日期格式');
+        }
+
+        // 返回 ISO 8601 格式，保持 UTC 時間和毫秒精度
+        return utcDate.toISOString();
+
+    } catch (error) {
+        console.warn('時間轉換錯誤:', timestamp, error.message);
+        return null;
+    }
+}
+
 // 取得小時標籤 (用於統計)
 function getHourLabel(timestamp) {
     if (!timestamp) return null;
@@ -245,9 +275,21 @@ function calculatePercentile(sortedArray, percentile) {
     }
 }
 
+// 提取 textPayload 中的精確時間戳記
+function extractPreciseTimestamp(textPayload) {
+    if (!textPayload) return null;
+    
+    // 匹配 ISO 8601 格式的時間戳記 (例如: 2025-10-19T15:59:58.224Z)
+    const timestampMatch = textPayload.match(/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)/);
+    return timestampMatch ? timestampMatch[1] : null;
+}
+
 // 分析 textPayload 格式並提取資料
 function analyzeTextPayload(textPayload) {
     if (!textPayload) return { type: 'unknown' };
+
+    // 提取精確時間戳記
+    const preciseTimestamp = extractPreciseTimestamp(textPayload);
 
     // 格式1: 包含 "got 200 in XXXms" 的完成請求
     const type1Match = textPayload.match(/got\s+\d+\s+in\s+(\d+)ms\s+for\s+(.+?)(?:\s+\[|$)/);
@@ -257,7 +299,8 @@ function analyzeTextPayload(textPayload) {
             type: 'completion',
             renderTime: parseInt(type1Match[1]),
             url: type1Match[2].trim(),
-            reqId: reqIdMatch ? reqIdMatch[1].trim() : null
+            reqId: reqIdMatch ? reqIdMatch[1].trim() : null,
+            preciseTimestamp: preciseTimestamp
         };
     }
 
@@ -266,7 +309,8 @@ function analyzeTextPayload(textPayload) {
     if (type2Match) {
         return {
             type: 'getting_request',
-            url: type2Match[1].trim()
+            url: type2Match[1].trim(),
+            preciseTimestamp: preciseTimestamp
         };
     }
 
@@ -295,7 +339,8 @@ function analyzeTextPayload(textPayload) {
         return {
             type: 'user_agent',
             userAgent: finalUserAgent,
-            reqId: reqIdMatch ? reqIdMatch[1].trim() : null
+            reqId: reqIdMatch ? reqIdMatch[1].trim() : null,
+            preciseTimestamp: preciseTimestamp
         };
     }
 
@@ -659,6 +704,7 @@ async function analyzeTwoCsvFiles(userAgentFile, renderTimeFile) {
 
         // 新增：reqId 關聯資料結構
         const reqIdToUserAgent = new Map(); // reqId -> userAgent 映射
+        const reqIdToUserAgentTimestamp = new Map(); // reqId -> user agent timestamp 映射
         const userAgentRenderTimes = {}; // userAgent -> [renderTime1, renderTime2, ...] 映射
 
         // URL 分析相關資料結構
@@ -682,6 +728,9 @@ async function analyzeTwoCsvFiles(userAgentFile, renderTimeFile) {
                 // 建立 reqId 到 userAgent 的映射
                 if (reqId && userAgent) {
                     reqIdToUserAgent.set(reqId, userAgent);
+                    // 同時記錄 user_agent 的時間戳記 (優先使用精確時間戳記)
+                    const timestampToStore = payloadInfo.preciseTimestamp || row.timestamp;
+                    reqIdToUserAgentTimestamp.set(reqId, timestampToStore);
                 }
 
                 // 統計每小時資料筆數
@@ -789,6 +838,13 @@ async function analyzeTwoCsvFiles(userAgentFile, renderTimeFile) {
                 // 記錄大於 8000ms 的時段
                 if (renderTime > 8000) {
                     const podName = cleanPodName(row['resource.labels.pod_name']);
+                    
+                    // 獲取 user_agent 時間戳記
+                    let userAgentTimestamp = null;
+                    if (reqId && reqIdToUserAgentTimestamp.has(reqId)) {
+                        userAgentTimestamp = reqIdToUserAgentTimestamp.get(reqId);
+                    }
+                    
                     slowRenderPeriods.push({
                         renderTime: renderTime,
                         timestamp: taiwanTimestamp,
@@ -796,7 +852,10 @@ async function analyzeTwoCsvFiles(userAgentFile, renderTimeFile) {
                         textPayload: textPayload,
                         reqId: reqId,
                         userAgent: matchedUserAgent,
-                        podName: podName
+                        podName: podName,
+                        // 新增的時間戳記欄位
+                        userAgentTimestamp: userAgentTimestamp, // 原始 user_agent 記錄時間
+                        got200Timestamp: payloadInfo.preciseTimestamp || row.timestamp // 原始 got 200 記錄時間 (優先使用精確時間戳記)
                     });
                 }
 
@@ -1521,7 +1580,10 @@ async function main() {
                     user_agent: p.userAgent,
                     user_agent_status: p.userAgent ? 'Matched' : 'No Match',
                     pod_name: p.podName,
-                    details: p.textPayload
+                    details: p.textPayload,
+                    // 新增的時間戳記欄位 (Google Cloud Trace 日誌可查詢格式)
+                    user_agent_record_time: convertToGoogleCloudFormat(p.userAgentTimestamp),
+                    got_200_record_time: convertToGoogleCloudFormat(p.got200Timestamp)
                 })),
             chart_data: result.chartData
         };

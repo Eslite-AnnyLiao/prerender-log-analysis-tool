@@ -20,9 +20,13 @@ class UserAgentStatisticsAnalyzer {
   /**
    * 建構函數
    * @param {string} dataDir - 資料目錄路徑，預設為 './to-analyze-daily-data'
+   * @param {string} startDate - 開始日期 (YYYY-MM-DD 格式)
+   * @param {string} endDate - 結束日期 (YYYY-MM-DD 格式)
    */
-  constructor(dataDir = './to-analyze-daily-data') {
+  constructor(dataDir = './to-analyze-daily-data', startDate = null, endDate = null) {
     this.dataDir = dataDir;                // 資料目錄路徑
+    this.startDate = startDate;            // 開始日期
+    this.endDate = endDate;                // 結束日期
     this.userAgentStats = new Map();       // User Agent 統計資料 (Map: userAgent -> count)
     this.totalRecords = 0;                 // 總記錄數
     this.processedFiles = [];              // 已處理檔案列表
@@ -289,11 +293,14 @@ class UserAgentStatisticsAnalyzer {
     console.log('🔍 開始分析 User Agent 統計');
     console.log(`📂 資料目錄: ${this.dataDir}`);
     
-    const userAgentLogDir = path.join(this.dataDir, 'user-agent-log');
+    // 設置預設日期範圍（如果沒有指定的話）
+    const startDate = this.startDate || '2025-10-09';
+    const endDate = this.endDate || '2025-11-09';
     
-    // 處理指定日期範圍的檔案 (category/user-agent-log-${date}-category.csv 格式)
-    console.log('\n📅 處理 2025-09-24 到 2025-10-20 期間的檔案...');
-    const targetDates = this.generateDateRange('2025-09-24', '2025-10-20');
+    console.log(`\n📅 處理 ${startDate} 到 ${endDate} 期間的檔案...`);
+    
+    const userAgentLogDir = path.join(this.dataDir, 'user-agent-log');
+    const targetDates = this.generateDateRange(startDate, endDate);
     
     for (const date of targetDates) {
       const dateStr = this.formatDate(date);
@@ -338,7 +345,7 @@ class UserAgentStatisticsAnalyzer {
         processedFiles: this.processedFiles.length,         // 已處理檔案數
         skippedFiles: this.skippedFiles.length,            // 跳過檔案數
         analysisDate: new Date().toISOString(),            // 分析時間
-        dateRange: '2025-09-24 to 2025-10-20'             // 分析日期範圍
+        dateRange: `${this.startDate || '2025-10-09'} to ${this.endDate || '2025-11-09'}`  // 分析日期範圍
       },
       statistics: sortedStats,                             // 排序後的統計資料
       processedFiles: this.processedFiles,                 // 已處理檔案詳情
@@ -501,6 +508,8 @@ async function main() {
   let dataDir = './to-analyze-daily-data';         // 預設資料目錄
   let outputDir = './';                           // 預設輸出目錄
   let filename = null;                            // 自訂檔名前綴
+  let startDate = null;                           // 開始日期
+  let endDate = null;                             // 結束日期
   
   // 解析命令列參數
   for (let i = 0; i < args.length; i++) {
@@ -515,10 +524,16 @@ async function main() {
     } else if (arg === '--filename' && i + 1 < args.length) {
       filename = args[i + 1];
       i++;
+    } else if (arg === '--start-date' && i + 1 < args.length) {
+      startDate = args[i + 1];
+      i++;
+    } else if (arg === '--end-date' && i + 1 < args.length) {
+      endDate = args[i + 1];
+      i++;
     } else if (arg === '--help') {
       console.log('🔍 User Agent 統計分析工具');
       console.log('');
-      console.log('分析 0923-0924 期間的 User Agent 資料，');
+      console.log('分析指定日期範圍內的 User Agent 資料，');
       console.log('統計每個 User Agent 的總數和佔比。');
       console.log('');
       console.log('使用方法:');
@@ -528,22 +543,25 @@ async function main() {
       console.log('  --data-dir <路徑>     指定資料目錄 (預設: ./to-analyze-daily-data)');
       console.log('  --output-dir <路徑>   指定輸出目錄 (預設: ./)');
       console.log('  --filename <檔名>     指定輸出檔名前綴 (預設: 自動生成)');
+      console.log('  --start-date <日期>   開始日期 YYYY-MM-DD 格式 (預設: 2025-10-09)');
+      console.log('  --end-date <日期>     結束日期 YYYY-MM-DD 格式 (預設: 2025-11-09)');
       console.log('  --help               顯示此說明');
       console.log('');
       console.log('輸入資料格式:');
-      console.log('  0923-0924: category/user-agent-log-${date}-category.csv');
+      console.log('  category/user-agent-log-${date}-category.csv');
       console.log('');
       console.log('範例:');
       console.log('  node useragent-statistics-analyzer.js');
-      console.log('  node useragent-statistics-analyzer.js --output-dir ./results');
-      console.log('  node useragent-statistics-analyzer.js --filename ua_stats_0923_0924');
+      console.log('  node useragent-statistics-analyzer.js --start-date 2025-10-01 --end-date 2025-10-31');
+      console.log('  node useragent-statistics-analyzer.js --output-dir ./results --start-date 2025-09-01');
+      console.log('  node useragent-statistics-analyzer.js --filename ua_stats_custom --start-date 2025-10-15 --end-date 2025-10-20');
       return;
     }
   }
   
   try {
     // 建立分析器並執行分析
-    const analyzer = new UserAgentStatisticsAnalyzer(dataDir);
+    const analyzer = new UserAgentStatisticsAnalyzer(dataDir, startDate, endDate);
     const results = await analyzer.analyze();
     const savedFiles = analyzer.saveResults(results, outputDir, filename);
     

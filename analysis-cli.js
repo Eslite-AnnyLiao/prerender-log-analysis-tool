@@ -57,6 +57,41 @@ function formatDate(dateStr) {
 }
 
 /**
+ * 檢測檔案路徑中的目標類型
+ * @param {string} inputFile - 輸入檔案路徑
+ * @returns {string|null} - 目標類型或 null
+ */
+function detectTargetFromPath(inputFile) {
+    if (inputFile.includes('/category/') || inputFile.includes('-category')) {
+        return 'category';
+    }
+    if (inputFile.includes('/product/') || inputFile.includes('-product')) {
+        return 'product';
+    }
+    return null;
+}
+
+/**
+ * 生成預設輸出檔名
+ * @param {string} inputFile - 輸入檔案
+ * @returns {string} - 輸出檔名
+ */
+function generateDefaultOutputFilename(inputFile) {
+    const basename = path.basename(inputFile, path.extname(inputFile));
+    const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    
+    // 嘗試從輸入檔案路徑檢測目標類型
+    const detectedTarget = detectTargetFromPath(inputFile);
+    
+    if (detectedTarget) {
+        return `url-extract/${detectedTarget}/extracted-urls-${basename}-${timestamp}.txt`;
+    } else {
+        // 如果無法檢測，放在根目錄
+        return `url-extract/extracted-urls-${basename}-${timestamp}.txt`;
+    }
+}
+
+/**
  * Check and refresh Google Cloud credentials
  */
 function checkAndRefreshGCloudAuth() {
@@ -311,6 +346,7 @@ function createProgram() {
                 else if (urlPath === 'category-3') targetFolder = 'L3';
                 else if (urlPath === 'category-4') targetFolder = 'L4';
                 else if (urlPath === 'category-5') targetFolder = 'L5';
+                else if (urlPath === 'product') targetFolder = 'product';
                 else if (urlPath === '') targetFolder = 'root';
                 else targetFolder = urlPath;
             }
@@ -464,6 +500,57 @@ function createProgram() {
             });
         });
     
+    // URL extraction command
+    program
+        .command('extract-urls')
+        .alias('urls')
+        .description('Extract unique URLs from log files')
+        .option('-f, --file <file>', 'Input file path')
+        .option('-d, --date <date>', 'Date in YYYYMMDD format')
+        .option('-t, --target <target>', 'Target type (category or product)')
+        .option('-o, --output <output>', 'Output file path')
+        .action((options) => {
+            log.title('🔍 Extracting URLs from log file...');
+            
+            let command;
+            if (options.file) {
+                // 檔案路徑模式
+                log.info(`Input file: ${options.file}`);
+                const outputFile = options.output || generateDefaultOutputFilename(options.file);
+                log.info(`Output file: ${outputFile}`);
+                command = `node url-extractor.js "${options.file}" "${outputFile}"`;
+            } else if (options.date && options.target) {
+                // 日期+目標模式
+                if (!validateDate(options.date)) {
+                    log.error('日期格式錯誤！請使用 YYYYMMDD 格式');
+                    process.exit(1);
+                }
+                if (!['category', 'product'].includes(options.target)) {
+                    log.error('目標類型錯誤！請使用 category 或 product');
+                    process.exit(1);
+                }
+                
+                log.info(`Date: ${formatDate(options.date)}`);
+                log.info(`Target: ${options.target}`);
+                
+                const outputFile = options.output || `url-extract/${options.target}/extracted-urls-${options.date}-${options.target}.txt`;
+                log.info(`Output file: ${outputFile}`);
+                
+                command = `node url-extractor.js --date ${options.date} --target ${options.target} "${outputFile}"`;
+            } else {
+                log.error('請提供檔案路徑 (-f) 或日期和目標 (-d, -t)');
+                log.info('使用方式:');
+                log.info('  npm run cli -- extract-urls -f logs-20251125.csv');
+                log.info('  npm run cli -- extract-urls -d 20251125 -t product');
+                log.info('  npm run cli -- extract-urls -d 20251124 -t category -o my-urls.txt');
+                process.exit(1);
+            }
+            
+            if (!executeCommand(command, 'URL 提取')) {
+                process.exit(1);
+            }
+        });
+
     // Status command
     program
         .command('status [date]')
@@ -555,6 +642,8 @@ function main() {
         console.log('  npm run cli performance 20250821 5 L2                # 慢渲染分析 (L2資料夾)');
         console.log('  npm run cli weekly 20250821 20250827                 # 週報生成');
         console.log('  npm run cli weekly 20250821 20250827 L2              # 週報生成 (L2資料夾)');
+        console.log('  npm run cli -- extract-urls -d 20251125 -t product       # 提取商品頁 URL');
+        console.log('  npm run cli -- extract-urls -f logs-20251125.csv         # 提取檔案中的 URL');
         console.log('  npm run cli status 20250821                          # 檢查狀態');
         console.log('  npm run cli results                                   # 查看結果');
         console.log('\n使用 --help 查看完整說明');

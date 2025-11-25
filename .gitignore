@@ -35,6 +35,7 @@ user-angents-analysis/
 daily-peak-qps-analysis/
 pod-load-distribution-analysis/
 slow-render-query-results/
+url-extract/
 
 # Data Files (CSV, JSON logs)
 to-analyze-daily-data/

@@ -10,12 +10,13 @@ if [ $# -lt 2 ] || [ $# -gt 3 ]; then
     echo "參數說明:"
     echo "  日期        YYYYMMDD 格式 (例如: 20250724)"
     echo "  分析筆數    要分析的記錄數量 (正整數)"
-    echo "  資料夾      可選，指定要分析的資料夾 (L1, L2, 等)"
+    echo "  資料夾      可選，指定要分析的資料夾 (L1, L2, category, product)"
     echo ""
     echo "範例:"
     echo "  $0 20250724 10"
     echo "  $0 20250725 5 L1"
     echo "  $0 20250726 8 L2"
+    echo "  $0 20251125 10 product"
     exit 1
 fi
 
@@ -49,6 +50,8 @@ fi
 if [ -n "$folder" ]; then
     if [ "$folder" = "category" ]; then
         analysis_file="./daily-analysis-result/category/dual_user-agent-log-${date_str}-category_log-${date_str}-category_analysis.json"
+    elif [ "$folder" = "product" ]; then
+        analysis_file="./daily-analysis-result/product/dual_user-agent-log-${date_str}-product_log-${date_str}-product_analysis.json"
     else
         # 對於 L1, L2 等資料夾，取最後一個字符作為 category 編號
         analysis_file="./daily-analysis-result/$folder/dual_user-agent-log-${date_str}-category-${folder: -1}_log-${date_str}-category-${folder: -1}_analysis.json"

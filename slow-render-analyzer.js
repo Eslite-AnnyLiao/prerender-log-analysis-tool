@@ -61,6 +61,8 @@ class SlowRenderAnalyzer {
     if (folder) {
       if (folder === 'category') {
         inputFile = `./daily-analysis-result/category/dual_user-agent-log-${dateStr}-category_log-${dateStr}-category_analysis.json`;
+      } else if (folder === 'product') {
+        inputFile = `./daily-analysis-result/product/dual_user-agent-log-${dateStr}-product_log-${dateStr}-product_analysis.json`;
       } else {
         const categoryNumber = folder.slice(-1); // Extract number from L1, L2, etc.
         inputFile = `./daily-analysis-result/${folder}/dual_user-agent-log-${dateStr}-category-${categoryNumber}_log-${dateStr}-category-${categoryNumber}_analysis.json`;
@@ -431,12 +433,13 @@ class SlowRenderAnalyzer {
     console.log('\n參數說明:');
     console.log('  日期        YYYYMMDD 格式 (例如: 20250819)');
     console.log('  分析筆數    要分析的記錄數量 (正整數)');
-    console.log('  資料夾      可選，指定要分析的資料夾 (L1, L2, category)');
+    console.log('  資料夾      可選，指定要分析的資料夾 (L1, L2, category, product)');
     console.log('  JSON檔案路徑 現有的慢渲染記錄 JSON 檔案');
     console.log('\n範例:');
     console.log('  node slow-render-analyzer.js 20250819 10');
     console.log('  node slow-render-analyzer.js 20250818 5 L2');
     console.log('  node slow-render-analyzer.js 20250820 15 category');
+    console.log('  node slow-render-analyzer.js 20251125 10 product');
     console.log('  node slow-render-analyzer.js --json slow-render-periods-log/category/slow_render_periods_20251019.json');
     console.log('\n功能說明:');
     console.log('  1. 從 daily-analysis-result/[資料夾/]分析檔讀取慢渲染資料');

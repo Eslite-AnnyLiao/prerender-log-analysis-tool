@@ -68,13 +68,18 @@ function parseArguments() {
     const args = process.argv.slice(2);
     
     if (args.length === 0) {
-        console.log('使用方式: node filter-slow-renders.js <日期> [閾值]');
-        console.log('範例: node filter-slow-renders.js 20251015 20000');
+        console.log('使用方式: node filter-slow-renders.js <日期> [閾值] [目標類型]');
+        console.log('範例: node filter-slow-renders.js 20251015 20000 category');
+        console.log('範例: node filter-slow-renders.js 20251125 15000 product');
+        console.log('日期格式: YYYYMMDD');
+        console.log('閾值: 渲染時間毫秒數 (預設: 20000)');
+        console.log('目標類型: category 或 product (預設: category)');
         process.exit(1);
     }
     
     const date = args[0];
     const threshold = args[1] ? parseInt(args[1]) : 20000;
+    const target = args[2] || 'category';
     
     // 驗證日期格式 (YYYYMMDD)
     if (!/^\d{8}$/.test(date)) {
@@ -82,17 +87,40 @@ function parseArguments() {
         process.exit(1);
     }
     
-    return { date, threshold };
+    // 驗證目標類型
+    if (!['category', 'product'].includes(target)) {
+        console.error('❌ 目標類型錯誤！請使用 category 或 product');
+        process.exit(1);
+    }
+    
+    return { date, threshold, target };
+}
+
+/**
+ * 生成檔案路徑
+ */
+function generatePaths(date, target) {
+    let sourceFile, targetDir;
+    
+    if (target === 'category') {
+        sourceFile = `./daily-analysis-result/category/dual_user-agent-log-${date}-category_log-${date}-category_analysis.json`;
+        targetDir = './slow-render-periods-log/category';
+    } else if (target === 'product') {
+        sourceFile = `./daily-analysis-result/product/dual_user-agent-log-${date}-product_log-${date}-product_analysis.json`;
+        targetDir = './slow-render-periods-log/product';
+    }
+    
+    const targetFile = `slow_render_periods_${date}.json`;
+    
+    return { sourceFile, targetDir, targetFile };
 }
 
 // 執行篩選
-const { date, threshold } = parseArguments();
-
-const sourceFile = `./daily-analysis-result/category/dual_user-agent-log-${date}-category_log-${date}-category_analysis.json`;
-const targetDir = './slow-render-periods-log/category';
-const targetFile = `slow_render_periods_${date}.json`;
+const { date, threshold, target } = parseArguments();
+const { sourceFile, targetDir, targetFile } = generatePaths(date, target);
 
 console.log(`📅 處理日期: ${date}`);
+console.log(`🎯 目標類型: ${target}`);
 console.log(`⏱️  渲染時間閾值: ${threshold}ms`);
 
 const result = filterSlowRenders(sourceFile, targetDir, targetFile, threshold);

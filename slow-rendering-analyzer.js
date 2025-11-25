@@ -117,8 +117,9 @@ class SlowRenderingAnalyzer {
         
         // 建立批次查詢的統一目錄
         const batchDate = options.dateStr || this.extractDateFromRecord(records[0]);
+        const target = options.target || 'category';
         
-        const batchOutputDir = `${this.baseOutputDir}/${batchDate}/batch-query`;
+        const batchOutputDir = `${this.baseOutputDir}/${batchDate}/${target}/batch-query`;
         const fs = require('fs');
         if (!fs.existsSync(batchOutputDir)) {
             fs.mkdirSync(batchOutputDir, { recursive: true });
@@ -181,11 +182,13 @@ class SlowRenderingAnalyzer {
     }
 
     async queryByDate(dateStr, options = {}) {
+        const target = options.target || 'category';
+        
         // 格式化日期 (支援 YYYYMMDD 或 YYYY-MM-DD 格式)
         const formattedDate = this.formatDate(dateStr);
         
         // 建立檔案路徑
-        const slowRenderFile = `./slow-render-periods-log/category/slow_render_periods_${formattedDate}.json`;
+        const slowRenderFile = `./slow-render-periods-log/${target}/slow_render_periods_${formattedDate}.json`;
         
         console.log(`🔍 查詢日期: ${formattedDate}`);
         console.log(`📖 讀取檔案: ${slowRenderFile}`);
@@ -261,7 +264,7 @@ class SlowRenderingAnalyzer {
 
             // 執行批次查詢
             console.log(`\n🚀 開始執行批次查詢...`);
-            const results = await this.batchQuerySlowRenders(recordsToQuery, { delayMs, dateStr: formattedDate });
+            const results = await this.batchQuerySlowRenders(recordsToQuery, { delayMs, dateStr: formattedDate, target });
 
             const successCount = results.filter(r => r.success).length;
             
@@ -303,7 +306,8 @@ class SlowRenderingAnalyzer {
 
     async analyzeSlowRenderingCauses(dateStr, options = {}) {
         const formattedDate = this.formatDate(dateStr);
-        const batchQueryDir = `${this.baseOutputDir}/${formattedDate}/batch-query`;
+        const target = options.target || 'category';
+        const batchQueryDir = `${this.baseOutputDir}/${formattedDate}/${target}/batch-query`;
         
         if (!fs.existsSync(batchQueryDir)) {
             throw new Error(`找不到批次查詢目錄: ${batchQueryDir}`);

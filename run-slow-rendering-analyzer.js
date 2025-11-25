@@ -29,6 +29,21 @@ function askDate() {
     });
 }
 
+function askTarget() {
+    return new Promise((resolve) => {
+        console.log('\n📊 目標類型:');
+        console.log('1. category - 分類頁');
+        console.log('2. product - 商品頁');
+        
+        rl.question('請選擇目標類型 (1-2, 預設為1): ', (choice) => {
+            const targets = { '1': 'category', '2': 'product' };
+            const target = targets[choice] || 'category';
+            console.log(`✅ 已選擇: ${target}`);
+            resolve(target);
+        });
+    });
+}
+
 function askQueryOptions() {
     return new Promise((resolve) => {
         console.log('\n📋 查詢選項:');
@@ -79,13 +94,14 @@ function askThreshold() {
     });
 }
 
-async function runFilterSlowRenders(date, threshold = 20000) {
+async function runFilterSlowRenders(date, threshold = 20000, target = 'category') {
     try {
         console.log(`\n🔍 執行 filter-slow-renders.js...`);
         console.log(`📅 日期: ${date}`);
+        console.log(`🎯 目標類型: ${target}`);
         console.log(`⏱️  閾值: ${threshold}ms`);
         
-        const command = `node filter-slow-renders.js ${date} ${threshold}`;
+        const command = `node filter-slow-renders.js ${date} ${threshold} ${target}`;
         console.log(`🚀 執行命令: ${command}`);
         
         const output = execSync(command, { encoding: 'utf8', cwd: __dirname });
@@ -99,7 +115,7 @@ async function runFilterSlowRenders(date, threshold = 20000) {
     }
 }
 
-async function queryLogs(analyzer, date, options, shouldAskFilter = true) {
+async function queryLogs(analyzer, date, options, target = 'category', shouldAskFilter = true) {
     try {
         // 詢問是否先執行 filter-slow-renders
         if (shouldAskFilter) {
@@ -107,7 +123,7 @@ async function queryLogs(analyzer, date, options, shouldAskFilter = true) {
             
             if (shouldFilter) {
                 const threshold = await askThreshold();
-                const filterResult = await runFilterSlowRenders(date, threshold);
+                const filterResult = await runFilterSlowRenders(date, threshold, target);
                 
                 if (!filterResult.success) {
                     console.log('⚠️ filter-slow-renders 執行失敗，是否繼續查詢？');
@@ -128,7 +144,11 @@ async function queryLogs(analyzer, date, options, shouldAskFilter = true) {
         }
         
         console.log(`\n🚀 開始查詢 ${date} 的慢渲染日誌...`);
-        const result = await analyzer.queryByDate(date, options);
+        console.log(`🎯 目標類型: ${target}`);
+        
+        // 添加 target 到 options
+        const queryOptions = { ...options, target };
+        const result = await analyzer.queryByDate(date, queryOptions);
         
         if (result.success) {
             console.log('\n✅ 查詢完成！');
@@ -149,10 +169,11 @@ async function queryLogs(analyzer, date, options, shouldAskFilter = true) {
     }
 }
 
-async function analyzeCauses(analyzer, date) {
+async function analyzeCauses(analyzer, date, target = 'category') {
     try {
         console.log(`\n🔍 開始分析 ${date} 的慢渲染原因...`);
-        const results = await analyzer.analyzeSlowRenderingCauses(date);
+        console.log(`🎯 目標類型: ${target}`);
+        const results = await analyzer.analyzeSlowRenderingCauses(date, { target });
         
         console.log('\n✅ 分析完成！');
         console.log(`📊 分析了 ${results.length} 個檔案`);
@@ -180,26 +201,29 @@ async function main() {
         switch (choice) {
             case '1':
                 const date1 = await askDate();
+                const target1 = await askTarget();
                 const options1 = await askQueryOptions();
-                await queryLogs(analyzer, date1, options1);
+                await queryLogs(analyzer, date1, options1, target1);
                 break;
                 
             case '2':
                 const date2 = await askDate();
-                await analyzeCauses(analyzer, date2);
+                const target2 = await askTarget();
+                await analyzeCauses(analyzer, date2, target2);
                 break;
                 
             case '3':
                 const date3 = await askDate();
+                const target3 = await askTarget();
                 const options3 = await askQueryOptions();
                 
                 console.log('\n🔄 執行完整流程...');
-                const queryResult = await queryLogs(analyzer, date3, options3);
+                const queryResult = await queryLogs(analyzer, date3, options3, target3);
                 
                 if (queryResult && queryResult.success && queryResult.successfulQueries > 0) {
                     console.log('\n⏳ 等待 5 秒後開始分析...');
                     await new Promise(resolve => setTimeout(resolve, 5000));
-                    await analyzeCauses(analyzer, date3);
+                    await analyzeCauses(analyzer, date3, target3);
                 } else {
                     console.log('⚠️ 查詢未成功，跳過分析步驟');
                 }
@@ -207,8 +231,9 @@ async function main() {
                 
             case '4':
                 const date4 = await askDate();
+                const target4 = await askTarget();
                 const threshold4 = await askThreshold();
-                await runFilterSlowRenders(date4, threshold4);
+                await runFilterSlowRenders(date4, threshold4, target4);
                 break;
                 
             case '5':

@@ -107,115 +107,188 @@ function formatDisplayDate(dateStr) {
     return `${year}-${month}-${day}`;
 }
 
+function mergeDataSources(data1, data2) {
+    const merged = {};
+    
+    // 合併第一個數據源
+    Object.keys(data1).forEach(pod => {
+        if (!merged[pod]) {
+            merged[pod] = {};
+        }
+        Object.keys(data1[pod]).forEach(time => {
+            merged[pod][time] = (merged[pod][time] || 0) + data1[pod][time];
+        });
+    });
+    
+    // 合併第二個數據源
+    Object.keys(data2).forEach(pod => {
+        if (!merged[pod]) {
+            merged[pod] = {};
+        }
+        Object.keys(data2[pod]).forEach(time => {
+            merged[pod][time] = (merged[pod][time] || 0) + data2[pod][time];
+        });
+    });
+    
+    return merged;
+}
+
+function generateCSVOutput(podMinuteRequests, outputFile, sourceType, displayDate) {
+    // 生成所有時間槽 (00:00-23:59)
+    const allTimeSlots = generateTimeSlots();
+    const allPods = Object.keys(podMinuteRequests).sort();
+    
+    console.log(`開始生成 ${sourceType} CSV...`);
+    console.log(`- 時間槽數: ${allTimeSlots.length} 個`);
+    console.log(`- Pod 數: ${allPods.length} 個`);
+    
+    // 生成 CSV 內容
+    const csvHeaders = ['Time', 'Total_Requests', ...allPods];
+    const csvRows = [];
+    
+    let totalRequestsForDay = 0;
+    let activeTimeSlots = 0;
+    
+    allTimeSlots.forEach(timeSlot => {
+        let totalRequestsForTimeSlot = 0;
+        const podRequestsForTimeSlot = [];
+        
+        allPods.forEach(pod => {
+            const requestCount = podMinuteRequests[pod][timeSlot] || 0;
+            podRequestsForTimeSlot.push(requestCount);
+            totalRequestsForTimeSlot += requestCount;
+        });
+        
+        if (totalRequestsForTimeSlot > 0) {
+            activeTimeSlots++;
+        }
+        
+        totalRequestsForDay += totalRequestsForTimeSlot;
+        
+        const row = [timeSlot, totalRequestsForTimeSlot, ...podRequestsForTimeSlot];
+        csvRows.push(row);
+    });
+    
+    // 寫入 CSV 文件
+    const csvContent = [csvHeaders.join(','), ...csvRows.map(row => row.join(','))].join('\n');
+    fs.writeFileSync(outputFile, csvContent, 'utf8');
+    
+    console.log(`\n=== ${sourceType} 分析完成 ===`);
+    console.log(`輸出文件: ${outputFile}`);
+    console.log(`文件大小: ${(fs.statSync(outputFile).size / 1024 / 1024).toFixed(2)} MB`);
+    console.log(`\n統計資訊:`);
+    console.log(`- 日期: ${displayDate}`);
+    console.log(`- 總請求數: ${totalRequestsForDay.toLocaleString()}`);
+    console.log(`- 活躍時間槽: ${activeTimeSlots} / ${allTimeSlots.length}`);
+    console.log(`- Pod 數量: ${allPods.length}`);
+    console.log(`- CSV 行數: ${csvRows.length + 1} (含標題)`);
+    console.log(`- CSV 列數: ${csvHeaders.length}`);
+    
+    // 顯示前幾個 Pod 名稱作為樣本
+    if (allPods.length > 0) {
+        console.log(`\nPod 列表樣本 (前 5 個):`);
+        allPods.slice(0, 5).forEach(pod => console.log(`  - ${pod}`));
+        if (allPods.length > 5) {
+            console.log(`  ... 還有 ${allPods.length - 5} 個 Pod`);
+        }
+    }
+    
+    // 顯示最忙碌的時間槽
+    const busyTimeSlots = csvRows
+        .filter(row => row[1] > 0)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5);
+        
+    if (busyTimeSlots.length > 0) {
+        console.log(`\n最忙碌的時間槽 (前 5 個):`);
+        busyTimeSlots.forEach(row => {
+            console.log(`  - ${row[0]}: ${row[1]} 請求`);
+        });
+    }
+    
+    return {
+        totalRequestsForDay,
+        activeTimeSlots,
+        podsCount: allPods.length,
+        csvRowsCount: csvRows.length + 1
+    };
+}
+
 async function analyzePodMinuteRequestsForDate(inputDate) {
     try {
         const targetDate = formatDateString(inputDate);
         const displayDate = formatDisplayDate(targetDate);
         
-        const inputFile = `./to-analyze-daily-data/user-agent-log/category/user-agent-log-${targetDate}-category.csv`;
-        const outputFile = `pod-minute-request-result/pod-minute-request-${targetDate}.csv`;
+        const categoryInputFile = `./to-analyze-daily-data/user-agent-log/category/user-agent-log-${targetDate}-category.csv`;
+        const productInputFile = `./to-analyze-daily-data/user-agent-log/product/user-agent-log-${targetDate}-product.csv`;
+        
+        const categoryOutputFile = `pod-minute-request-result/pod-minute-request-${targetDate}-category.csv`;
+        const productOutputFile = `pod-minute-request-result/pod-minute-request-${targetDate}-product.csv`;
+        const combinedOutputFile = `pod-minute-request-result/pod-minute-request-${targetDate}-combined.csv`;
         
         console.log(`\n=== Pod 每分鐘請求數分析 ===`);
         console.log(`目標日期: ${displayDate}`);
-        console.log(`輸入文件: ${inputFile}`);
-        console.log(`輸出文件: ${outputFile}`);
+        console.log(`Category 輸入文件: ${categoryInputFile}`);
+        console.log(`Product 輸入文件: ${productInputFile}`);
+        console.log(`輸出文件:`);
+        console.log(`  - Category: ${categoryOutputFile}`);
+        console.log(`  - Product: ${productOutputFile}`);
+        console.log(`  - Combined: ${combinedOutputFile}`);
         
-        // 檢查輸入文件是否存在
-        if (!fs.existsSync(inputFile)) {
-            console.error(`錯誤: 找不到文件 ${inputFile}`);
-            console.log('\n可用的文件列表:');
-            const categoryDir = './to-analyze-daily-data/user-agent-log/category/';
-            if (fs.existsSync(categoryDir)) {
-                const files = fs.readdirSync(categoryDir)
-                    .filter(file => file.includes('user-agent-log') && file.endsWith('.csv'))
-                    .sort();
-                files.slice(0, 10).forEach(file => console.log(`  - ${file}`));
-                if (files.length > 10) {
-                    console.log(`  ... 還有 ${files.length - 10} 個文件`);
-                }
-            }
+        // 檢查 Category 文件
+        if (!fs.existsSync(categoryInputFile)) {
+            console.error(`錯誤: 找不到 Category 文件 ${categoryInputFile}`);
             return;
         }
         
-        // 處理該日期的 CSV 文件
-        const podMinuteRequests = processCSVFile(inputFile, targetDate);
+        // 檢查 Product 文件
+        if (!fs.existsSync(productInputFile)) {
+            console.error(`錯誤: 找不到 Product 文件 ${productInputFile}`);
+            return;
+        }
         
-        if (Object.keys(podMinuteRequests).length === 0) {
+        // 確保輸出目錄存在
+        const outputDir = 'pod-minute-request-result';
+        if (!fs.existsSync(outputDir)) {
+            fs.mkdirSync(outputDir, { recursive: true });
+        }
+        
+        // 處理 Category 數據
+        console.log('\n處理 Category 數據...');
+        const categoryData = processCSVFile(categoryInputFile, targetDate);
+        
+        // 處理 Product 數據
+        console.log('\n處理 Product 數據...');
+        const productData = processCSVFile(productInputFile, targetDate);
+        
+        if (Object.keys(categoryData).length === 0 && Object.keys(productData).length === 0) {
             console.error('沒有找到有效的 pod 數據');
             return;
         }
         
-        // 生成所有時間槽 (00:00-23:59)
-        const allTimeSlots = generateTimeSlots();
-        const allPods = Object.keys(podMinuteRequests).sort();
-        
-        console.log(`開始生成 CSV...`);
-        console.log(`- 時間槽數: ${allTimeSlots.length} 個`);
-        console.log(`- Pod 數: ${allPods.length} 個`);
-        
-        // 生成 CSV 內容
-        const csvHeaders = ['Time', 'Total_Requests', ...allPods];
-        const csvRows = [];
-        
-        let totalRequestsForDay = 0;
-        let activeTimeSlots = 0;
-        
-        allTimeSlots.forEach(timeSlot => {
-            let totalRequestsForTimeSlot = 0;
-            const podRequestsForTimeSlot = [];
-            
-            allPods.forEach(pod => {
-                const requestCount = podMinuteRequests[pod][timeSlot] || 0;
-                podRequestsForTimeSlot.push(requestCount);
-                totalRequestsForTimeSlot += requestCount;
-            });
-            
-            if (totalRequestsForTimeSlot > 0) {
-                activeTimeSlots++;
-            }
-            
-            totalRequestsForDay += totalRequestsForTimeSlot;
-            
-            const row = [timeSlot, totalRequestsForTimeSlot, ...podRequestsForTimeSlot];
-            csvRows.push(row);
-        });
-        
-        // 寫入 CSV 文件
-        const csvContent = [csvHeaders.join(','), ...csvRows.map(row => row.join(','))].join('\n');
-        fs.writeFileSync(outputFile, csvContent, 'utf8');
-        
-        console.log(`\n=== 分析完成 ===`);
-        console.log(`輸出文件: ${outputFile}`);
-        console.log(`文件大小: ${(fs.statSync(outputFile).size / 1024 / 1024).toFixed(2)} MB`);
-        console.log(`\n統計資訊:`);
-        console.log(`- 日期: ${displayDate}`);
-        console.log(`- 總請求數: ${totalRequestsForDay.toLocaleString()}`);
-        console.log(`- 活躍時間槽: ${activeTimeSlots} / ${allTimeSlots.length}`);
-        console.log(`- Pod 數量: ${allPods.length}`);
-        console.log(`- CSV 行數: ${csvRows.length + 1} (含標題)`);
-        console.log(`- CSV 列數: ${csvHeaders.length}`);
-        
-        // 顯示前幾個 Pod 名稱作為樣本
-        if (allPods.length > 0) {
-            console.log(`\nPod 列表樣本 (前 5 個):`);
-            allPods.slice(0, 5).forEach(pod => console.log(`  - ${pod}`));
-            if (allPods.length > 5) {
-                console.log(`  ... 還有 ${allPods.length - 5} 個 Pod`);
-            }
+        // 生成 Category CSV
+        if (Object.keys(categoryData).length > 0) {
+            generateCSVOutput(categoryData, categoryOutputFile, 'Category', displayDate);
+        } else {
+            console.log('Category 數據為空，跳過生成');
         }
         
-        // 顯示最忙碌的時間槽
-        const busyTimeSlots = csvRows
-            .filter(row => row[1] > 0)
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 5);
-            
-        if (busyTimeSlots.length > 0) {
-            console.log(`\n最忙碌的時間槽 (前 5 個):`);
-            busyTimeSlots.forEach(row => {
-                console.log(`  - ${row[0]}: ${row[1]} 請求`);
-            });
+        // 生成 Product CSV
+        if (Object.keys(productData).length > 0) {
+            generateCSVOutput(productData, productOutputFile, 'Product', displayDate);
+        } else {
+            console.log('Product 數據為空，跳過生成');
         }
+        
+        // 合併數據並生成 Combined CSV
+        const combinedData = mergeDataSources(categoryData, productData);
+        if (Object.keys(combinedData).length > 0) {
+            generateCSVOutput(combinedData, combinedOutputFile, 'Combined', displayDate);
+        } else {
+            console.log('Combined 數據為空，跳過生成');
+        }
+        
+        console.log(`\n=== 所有分析完成 ===`);
         
     } catch (error) {
         console.error('分析過程中發生錯誤:', error.message);

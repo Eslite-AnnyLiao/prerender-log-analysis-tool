@@ -13,6 +13,30 @@ class JsonAggregator {
                 start: null,
                 end: null
             },
+            // 新增：分類統計
+            page_type_stats: {
+                category: {
+                    files_count: 0,
+                    render_records: 0,
+                    user_agent_records: 0,
+                    render_time_sum: 0,
+                    timeout_count: 0
+                },
+                product: {
+                    files_count: 0,
+                    render_records: 0,
+                    user_agent_records: 0,
+                    render_time_sum: 0,
+                    timeout_count: 0
+                },
+                other: {
+                    files_count: 0,
+                    render_records: 0,
+                    user_agent_records: 0,
+                    render_time_sum: 0,
+                    timeout_count: 0
+                }
+            },
             render_time_aggregated: {
                 total_sum: 0,
                 total_count: 0,
@@ -441,6 +465,19 @@ class JsonAggregator {
         }
     }
 
+    // 從檔名判斷頁面類型
+    getPageTypeFromFilename(filename) {
+        const lowerFilename = filename.toLowerCase();
+        
+        if (lowerFilename.includes('category') || lowerFilename.includes('category-1') || lowerFilename.includes('category-2')) {
+            return 'category';
+        } else if (lowerFilename.includes('product') || lowerFilename.includes('product-1') || lowerFilename.includes('product-2')) {
+            return 'product';
+        } else {
+            return 'other';
+        }
+    }
+
     // 處理單個 JSON 資料
     processJsonData(data, filename) {
         if (!data) return;
@@ -448,9 +485,15 @@ class JsonAggregator {
         this.allData.push({ filename, data });
         this.summary.total_files_processed++;
 
-        // 記錄檔案資訊
+        // 判斷頁面類型
+        const pageType = this.getPageTypeFromFilename(filename);
+        const pageStats = this.summary.page_type_stats[pageType];
+        pageStats.files_count++;
+
+        // 記錄檔案資訊 (新增頁面類型)
         this.summary.files_info.push({
             filename: filename,
+            page_type: pageType,
             analysis_time: data.analysis_time || 'Unknown',
             analysis_mode: data.analysis_mode || data.frequency_analysis_info || 'Unknown'
         });
@@ -475,6 +518,17 @@ class JsonAggregator {
             const recordCount = renderStats.total_records || 0;
 
             this.summary.total_render_records += recordCount;
+            pageStats.render_records += recordCount;
+
+            // 統計頁面類型的渲染時間
+            if (renderStats.average_ms && recordCount > 0) {
+                pageStats.render_time_sum += renderStats.average_ms * recordCount;
+            }
+
+            // 統計頁面類型的超時數
+            if (renderStats.count_above_45000ms) {
+                pageStats.timeout_count += renderStats.count_above_45000ms;
+            }
 
             // 收集詳細統計資料用於加權計算
             if (recordCount > 0) {
@@ -529,8 +583,10 @@ class JsonAggregator {
             const userAgentStats = data.user_agent_analysis;
 
             if (userAgentStats.overall_stats) {
-                this.summary.total_user_agent_records += userAgentStats.overall_stats.total_requests || 0;
-                this.summary.user_agent_aggregated.total_requests += userAgentStats.overall_stats.total_requests || 0;
+                const userAgentRequests = userAgentStats.overall_stats.total_requests || 0;
+                this.summary.total_user_agent_records += userAgentRequests;
+                this.summary.user_agent_aggregated.total_requests += userAgentRequests;
+                pageStats.user_agent_records += userAgentRequests;
             }
 
             // 收集獨特的 User-Agent 並分析爬蟲
@@ -688,6 +744,39 @@ class JsonAggregator {
         console.log(`✅ 檔案處理完成！`);
     }
 
+    // 計算頁面類型統計
+    calculatePageTypeStats() {
+        const pageTypeStats = {};
+        
+        Object.keys(this.summary.page_type_stats).forEach(pageType => {
+            const stats = this.summary.page_type_stats[pageType];
+            
+            pageTypeStats[pageType] = {
+                files_count: stats.files_count,
+                render_records: stats.render_records,
+                user_agent_records: stats.user_agent_records,
+                average_render_time_ms: stats.render_records > 0 
+                    ? Math.round((stats.render_time_sum / stats.render_records) * 100) / 100 
+                    : 0,
+                timeout_count: stats.timeout_count,
+                timeout_rate: stats.render_records > 0 
+                    ? Math.round((stats.timeout_count / stats.render_records) * 10000) / 100 
+                    : 0,
+                percentage_of_total_files: this.summary.total_files_processed > 0 
+                    ? Math.round((stats.files_count / this.summary.total_files_processed) * 10000) / 100 
+                    : 0,
+                percentage_of_total_renders: this.summary.total_render_records > 0 
+                    ? Math.round((stats.render_records / this.summary.total_render_records) * 10000) / 100 
+                    : 0,
+                percentage_of_total_requests: this.summary.total_user_agent_records > 0 
+                    ? Math.round((stats.user_agent_records / this.summary.total_user_agent_records) * 10000) / 100 
+                    : 0
+            };
+        });
+        
+        return pageTypeStats;
+    }
+
     // 計算最終統計結果
     calculateFinalStats() {
         // 計算爬蟲統計
@@ -698,6 +787,9 @@ class JsonAggregator {
 
         // 計算時段統計
         const hourlyStats = this.calculateHourlyStats();
+
+        // 計算頁面類型統計
+        const pageTypeStats = this.calculatePageTypeStats();
 
         const finalStats = {
             // 整體概覽指標
@@ -715,6 +807,9 @@ class JsonAggregator {
                     : 0,
                 total_timeout_pages: this.summary.render_time_aggregated.timeout_count_total
             },
+
+            // 頁面類型分析
+            page_type_analysis: pageTypeStats,
 
             // Prerender 性能分析
             prerender_performance: prerenderStats,
@@ -987,6 +1082,7 @@ class JsonAggregator {
         const crawlerStats = stats.seo_crawler_stats;
         const prerenderStats = stats.prerender_performance;
         const hourlyStats = stats.hourly_performance_analysis;
+        const pageTypeStats = stats.page_type_analysis;
 
         return `
 多檔案統計分析報告
@@ -1003,6 +1099,32 @@ class JsonAggregator {
 4. 平均 P95 Render 時間:     ${stats.overview.average_p95_render_time_ms} ms
 5. 平均 P99 Render 時間:     ${stats.overview.average_p99_render_time_ms} ms
 6. 總超時頁面數 (>45s):      ${stats.overview.total_timeout_pages.toLocaleString()} 筆
+
+📄 頁面類型分析
+========================================
+📊 Category 頁面:
+• 檔案數:                   ${pageTypeStats.category.files_count} 個 (${pageTypeStats.category.percentage_of_total_files}%)
+• Render 記錄:              ${pageTypeStats.category.render_records.toLocaleString()} 筆 (${pageTypeStats.category.percentage_of_total_renders}%)
+• User-Agent 記錄:          ${pageTypeStats.category.user_agent_records.toLocaleString()} 筆 (${pageTypeStats.category.percentage_of_total_requests}%)
+• 平均 Render 時間:         ${pageTypeStats.category.average_render_time_ms} ms
+• 超時數:                   ${pageTypeStats.category.timeout_count.toLocaleString()} 筆
+• 超時率:                   ${pageTypeStats.category.timeout_rate}%
+
+🛍️ Product 頁面:
+• 檔案數:                   ${pageTypeStats.product.files_count} 個 (${pageTypeStats.product.percentage_of_total_files}%)
+• Render 記錄:              ${pageTypeStats.product.render_records.toLocaleString()} 筆 (${pageTypeStats.product.percentage_of_total_renders}%)
+• User-Agent 記錄:          ${pageTypeStats.product.user_agent_records.toLocaleString()} 筆 (${pageTypeStats.product.percentage_of_total_requests}%)
+• 平均 Render 時間:         ${pageTypeStats.product.average_render_time_ms} ms
+• 超時數:                   ${pageTypeStats.product.timeout_count.toLocaleString()} 筆
+• 超時率:                   ${pageTypeStats.product.timeout_rate}%
+
+🔍 Other 頁面:
+• 檔案數:                   ${pageTypeStats.other.files_count} 個 (${pageTypeStats.other.percentage_of_total_files}%)
+• Render 記錄:              ${pageTypeStats.other.render_records.toLocaleString()} 筆 (${pageTypeStats.other.percentage_of_total_renders}%)
+• User-Agent 記錄:          ${pageTypeStats.other.user_agent_records.toLocaleString()} 筆 (${pageTypeStats.other.percentage_of_total_requests}%)
+• 平均 Render 時間:         ${pageTypeStats.other.average_render_time_ms} ms
+• 超時數:                   ${pageTypeStats.other.timeout_count.toLocaleString()} 筆
+• 超時率:                   ${pageTypeStats.other.timeout_rate}%
 
 ⚡ Prerender 性能分析
 ========================================
@@ -1129,9 +1251,11 @@ URL 統計:
 
 📁 處理檔案清單
 ========================================
-${stats.metadata.files_info.map((file, index) =>
-            `${index + 1}. ${file.filename} (${file.analysis_mode})`
-        ).join('\n')}
+${stats.metadata.files_info.map((file, index) => {
+            const pageTypeEmoji = file.page_type === 'category' ? '📊' : 
+                                 file.page_type === 'product' ? '🛍️' : '🔍';
+            return `${index + 1}. ${file.filename} (${pageTypeEmoji} ${file.page_type}) (${file.analysis_mode})`;
+        }).join('\n')}
 `;
     }
 }
@@ -1198,17 +1322,17 @@ async function main() {
         // 確保輸出目錄存在，支援 L1/L2 子資料夾
         let outputDir = 'weekly_aggregated_results';
         
-        // 檢查輸入目錄是否包含 L1/L2 等子資料夾
+        // 檢查輸入目錄是否包含頁面類型子資料夾
         if (args[0] === '--dir' && args[1]) {
             const inputDir = args[1];
-            // 從輸入路徑中提取 URL 資料夾（L1/L2等）
+            // 從輸入路徑中提取頁面類型資料夾（category/product等）
             const pathParts = inputDir.split('/');
             const lastPart = pathParts[pathParts.length - 1];
             
-            // 如果最後一部分是 L1、L2 等格式，則在輸出目錄中創建相同結構
-            if (/^L\d+$/.test(lastPart)) {
+            // 如果最後一部分是頁面類型，則在輸出目錄中創建相同結構
+            if (lastPart === 'category' || lastPart === 'product' || lastPart === 'other') {
                 outputDir = `weekly_aggregated_results/${lastPart}`;
-                console.log(`📂 檢測到 URL 資料夾: ${lastPart}，將建立對應的輸出結構`);
+                console.log(`📂 檢測到頁面類型資料夾: ${lastPart}，將建立對應的輸出結構`);
             }
         }
         
@@ -1229,9 +1353,9 @@ async function main() {
         console.log(`✅ 文字報告已儲存至: ${txtFileName}`);
         
         // 顯示資料夾結構資訊
-        const urlFolder = outputDir.includes('/') ? outputDir.split('/')[1] : null;
-        if (urlFolder) {
-            console.log(`📊 已為 ${urlFolder} URL 類別生成專屬週報`);
+        const pageTypeFolder = outputDir.includes('/') ? outputDir.split('/')[1] : null;
+        if (pageTypeFolder) {
+            console.log(`📊 已為 ${pageTypeFolder} 頁面類型生成專屬週報`);
         }
 
     } catch (error) {

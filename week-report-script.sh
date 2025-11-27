@@ -2,17 +2,17 @@
 
 # 檢查參數數量
 if [ $# -lt 2 ] || [ $# -gt 3 ]; then
-    echo "使用方法: $0 '開始日期 ~ 結束日期' 資料夾名稱 [URL資料夾]"
+    echo "使用方法: $0 '開始日期 ~ 結束日期' 資料夾名稱 [頁面類型]"
     echo "範例: $0 '20250724 ~ 20250730' week1"
-    echo "範例: $0 '20250724 ~ 20250730' week1 L1"
-    echo "範例: $0 '20250724 ~ 20250730' week1 L2"
+    echo "範例: $0 '20250724 ~ 20250730' week1 category"
+    echo "範例: $0 '20250724 ~ 20250730' week1 product"
     exit 1
 fi
 
 # 解析參數
 date_range="$1"
 folder_name="$2"
-url_folder="$3"
+page_type="$3"
 
 # 提取開始和結束日期
 start_date=$(echo "$date_range" | awk '{print $1}')
@@ -21,8 +21,8 @@ end_date=$(echo "$date_range" | awk '{print $3}')
 echo "開始日期: $start_date"
 echo "結束日期: $end_date"
 echo "資料夾名稱: $folder_name"
-if [ -n "$url_folder" ]; then
-    echo "URL資料夾: $url_folder"
+if [ -n "$page_type" ]; then
+    echo "頁面類型: $page_type"
 fi
 
 # 驗證日期格式
@@ -90,8 +90,8 @@ echo "=== 步驟 1: 複製分析結果 ==="
 # 結構應為: to-analyze-weekly-data/week_${start_date}_${end_date}/${url_folder}
 base_folder_name="week_${start_date}_${end_date}"
 
-if [ -n "$url_folder" ]; then
-    target_dir="./to-analyze-weekly-data/$base_folder_name/$url_folder"
+if [ -n "$page_type" ]; then
+    target_dir="./to-analyze-weekly-data/$base_folder_name/$page_type"
 else
     target_dir="./to-analyze-weekly-data/$base_folder_name"
 fi
@@ -102,33 +102,56 @@ if [ ! -d "$target_dir" ]; then
 fi
 
 copied_files=0
-for date in "${dates[@]}"; do
-    if [ -n "$url_folder" ]; then
-        # 依據參數決定檔案路徑和檔名
-        if [ "$url_folder" = "L1" ]; then
-            json_file="./daily-analysis-result/category/dual_user-agent-log-${date}-category-1_log-${date}-category-1_analysis.json"
-        elif [ "$url_folder" = "L2" ]; then
-            json_file="./daily-analysis-result/category/dual_user-agent-log-${date}-category-2_log-${date}-category-2_analysis.json"
-        elif [ "$url_folder" = "category" ]; then
-            json_file="./daily-analysis-result/category/dual_user-agent-log-${date}-category_log-${date}-category_analysis.json"
-        else
-            json_file="./daily-analysis-result/category/dual_user-agent-log-${date}-${url_folder}_log-${date}-${url_folder}_analysis.json"
-        fi
-    else
-        # 舊格式：根目錄檔案
-        json_file="./daily-analysis-result/dual_user-agent-${date}_logs-${date}_analysis.json"
-    fi
+
+# 複製檔案的函數
+copy_file_if_exists() {
+    local file_path="$1"
+    local file_type="$2"
     
-    if [ -f "$json_file" ]; then
-        cp "$json_file" "$target_dir/"
+    if [ -f "$file_path" ]; then
+        cp "$file_path" "$target_dir/"
         if [ $? -eq 0 ]; then
-            echo "✓ 複製檔案: $(basename "$json_file")"
+            echo "✓ 複製 $file_type 檔案: $(basename "$file_path")"
             ((copied_files++))
         else
-            echo "✗ 複製失敗: $json_file"
+            echo "✗ 複製失敗: $file_path"
         fi
     else
-        echo "⚠ 檔案不存在: $json_file"
+        echo "⚠ $file_type 檔案不存在: $file_path"
+    fi
+}
+
+for date in "${dates[@]}"; do
+    if [ -n "$page_type" ]; then
+        # 依據參數決定檔案路徑和檔名
+        if [ "$page_type" = "category" ]; then
+            category_file="./daily-analysis-result/category/dual_user-agent-log-${date}-category_log-${date}-category_analysis.json"
+            product_file="" # 只處理 category
+            
+        elif [ "$page_type" = "product" ]; then
+            category_file="" # 只處理 product
+            product_file="./daily-analysis-result/product/dual_user-agent-log-${date}-product_log-${date}-product_analysis.json"
+            
+        else
+            # 其他自定義資料夾，同時檢查 category 和 product
+            category_file="./daily-analysis-result/category/dual_user-agent-log-${date}-${page_type}_log-${date}-${page_type}_analysis.json"
+            product_file="./daily-analysis-result/product/dual_user-agent-log-${date}-${page_type}_log-${date}-${page_type}_analysis.json"
+        fi
+        
+        # 複製 category 檔案
+        if [ -n "$category_file" ]; then
+            copy_file_if_exists "$category_file" "Category"
+        fi
+        
+        # 複製 product 檔案
+        if [ -n "$product_file" ]; then
+            copy_file_if_exists "$product_file" "Product"
+        fi
+        
+    else
+        # 舊格式：根目錄檔案
+        root_file="./daily-analysis-result/dual_user-agent-${date}_logs-${date}_analysis.json"
+        copy_file_if_exists "$root_file" "Root"
     fi
 done
 
@@ -142,8 +165,8 @@ if [ $copied_files -gt 0 ]; then
     node week-report.js --dir "$target_dir"
     if [ $? -eq 0 ]; then
         echo "✓ 週報告生成完成"
-        if [ -n "$url_folder" ]; then
-            echo "ℹ️  週報結果已儲存在: ./weekly_aggregated_results/$url_folder/"
+        if [ -n "$page_type" ]; then
+            echo "ℹ️  週報結果已儲存在: ./weekly_aggregated_results/$page_type/"
         else
             echo "ℹ️  週報結果已儲存在: ./weekly_aggregated_results/"
         fi

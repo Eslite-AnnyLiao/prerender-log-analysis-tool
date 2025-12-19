@@ -6,6 +6,7 @@ if [ $# -lt 2 ] || [ $# -gt 3 ]; then
     echo "範例: $0 '20250724 ~ 20250730' week1"
     echo "範例: $0 '20250724 ~ 20250730' week1 category"
     echo "範例: $0 '20250724 ~ 20250730' week1 product"
+    echo "範例: $0 '20250724 ~ 20250730' week1 root"
     exit 1
 fi
 
@@ -132,6 +133,10 @@ for date in "${dates[@]}"; do
             category_file="" # 只處理 product
             product_file="./daily-analysis-result/product/dual_user-agent-log-${date}-product_log-${date}-product_analysis.json"
             
+        elif [ "$page_type" = "root" ]; then
+            category_file="" # 只處理 root
+            product_file="./daily-analysis-result/root/dual_user-agent-log-${date}-root_log-${date}-root_analysis.json"
+            
         else
             # 其他自定義資料夾，同時檢查 category 和 product
             category_file="./daily-analysis-result/category/dual_user-agent-log-${date}-${page_type}_log-${date}-${page_type}_analysis.json"
@@ -143,9 +148,13 @@ for date in "${dates[@]}"; do
             copy_file_if_exists "$category_file" "Category"
         fi
         
-        # 複製 product 檔案
+        # 複製 product/root 檔案
         if [ -n "$product_file" ]; then
-            copy_file_if_exists "$product_file" "Product"
+            if [ "$page_type" = "root" ]; then
+                copy_file_if_exists "$product_file" "Root"
+            else
+                copy_file_if_exists "$product_file" "Product"
+            fi
         fi
         
     else

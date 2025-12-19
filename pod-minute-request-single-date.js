@@ -107,6 +107,49 @@ function formatDisplayDate(dateStr) {
     return `${year}-${month}-${day}`;
 }
 
+// 讀取慢渲染統計資料
+function loadSlowRenderStats(targetDate, sourceType) {
+    try {
+        const displayDate = formatDisplayDate(targetDate);
+        const fileName = `pod_dual_user-agent-log-${targetDate}-${sourceType}_log-${targetDate}-${sourceType}_detailed.json`;
+        const filePath = `./daily-pod-analysis-result/${sourceType}/${fileName}`;
+        
+        console.log(`嘗試讀取慢渲染統計文件: ${filePath}`);
+        
+        if (!fs.existsSync(filePath)) {
+            console.log(`慢渲染統計文件不存在: ${filePath}`);
+            return null;
+        }
+        
+        const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        const slowRenderMinuteStats = {};
+        
+        // 處理每個 pod 的慢渲染統計
+        if (data.pod_results && Array.isArray(data.pod_results)) {
+            data.pod_results.forEach(podResult => {
+                if (podResult.slow_render_hour_minute_stats && 
+                    podResult.slow_render_hour_minute_stats.all_hour_minute_stats) {
+                    
+                    podResult.slow_render_hour_minute_stats.all_hour_minute_stats.forEach(timeStats => {
+                        const time = timeStats.time; // HH:MM 格式
+                        const count = timeStats.count || 0;
+                        
+                        // 累加所有 pod 的慢渲染數
+                        slowRenderMinuteStats[time] = (slowRenderMinuteStats[time] || 0) + count;
+                    });
+                }
+            });
+        }
+        
+        console.log(`成功讀取慢渲染統計，共 ${Object.keys(slowRenderMinuteStats).length} 個有慢渲染的時分點`);
+        return slowRenderMinuteStats;
+        
+    } catch (error) {
+        console.error(`讀取慢渲染統計失敗: ${error.message}`);
+        return null;
+    }
+}
+
 function mergeDataSources(data1, data2) {
     const merged = {};
     
@@ -133,7 +176,7 @@ function mergeDataSources(data1, data2) {
     return merged;
 }
 
-function generateOutput(podMinuteRequests, outputFile, sourceType, displayDate) {
+function generateOutput(podMinuteRequests, slowRenderMinuteStats, outputFile, sourceType, displayDate) {
     // 生成所有時間槽 (00:00-23:59)
     const allTimeSlots = generateTimeSlots();
     const allPods = Object.keys(podMinuteRequests).sort();
@@ -141,9 +184,10 @@ function generateOutput(podMinuteRequests, outputFile, sourceType, displayDate) 
     console.log(`開始生成 ${sourceType} 輸出...`);
     console.log(`- 時間槽數: ${allTimeSlots.length} 個`);
     console.log(`- Pod 數: ${allPods.length} 個`);
+    console.log(`- 慢渲染統計: ${slowRenderMinuteStats ? '已包含' : '未包含'}`);
     
-    // 生成 CSV 內容
-    const csvHeaders = ['Time', 'Total_Requests', ...allPods];
+    // 生成 CSV 內容 - 新增慢渲染欄位
+    const csvHeaders = ['Time', 'Total_Requests', 'Slow_Render_Count', ...allPods];
     const csvRows = [];
     
     // 生成 JSON 內容
@@ -152,24 +196,30 @@ function generateOutput(podMinuteRequests, outputFile, sourceType, displayDate) 
             date: displayDate,
             sourceType: sourceType,
             totalPods: allPods.length,
-            timeSlots: allTimeSlots.length
+            timeSlots: allTimeSlots.length,
+            includesSlowRenderData: !!slowRenderMinuteStats
         },
         pods: allPods,
         timeSlots: [],
         summary: {
             totalRequestsForDay: 0,
+            totalSlowRendersForDay: 0,
             activeTimeSlots: 0,
             busyTimeSlots: []
         }
     };
     
     let totalRequestsForDay = 0;
+    let totalSlowRendersForDay = 0;
     let activeTimeSlots = 0;
     
     allTimeSlots.forEach(timeSlot => {
         let totalRequestsForTimeSlot = 0;
         const podRequestsForTimeSlot = [];
         const podData = {};
+        
+        // 取得該分鐘的慢渲染次數
+        const slowRenderCount = slowRenderMinuteStats && slowRenderMinuteStats[timeSlot] ? slowRenderMinuteStats[timeSlot] : 0;
         
         allPods.forEach(pod => {
             const requestCount = podMinuteRequests[pod][timeSlot] || 0;
@@ -183,21 +233,24 @@ function generateOutput(podMinuteRequests, outputFile, sourceType, displayDate) 
         }
         
         totalRequestsForDay += totalRequestsForTimeSlot;
+        totalSlowRendersForDay += slowRenderCount;
         
-        // CSV row
-        const row = [timeSlot, totalRequestsForTimeSlot, ...podRequestsForTimeSlot];
+        // CSV row - 包含慢渲染統計
+        const row = [timeSlot, totalRequestsForTimeSlot, slowRenderCount, ...podRequestsForTimeSlot];
         csvRows.push(row);
         
         // JSON timeSlot data
         jsonData.timeSlots.push({
             time: timeSlot,
             totalRequests: totalRequestsForTimeSlot,
+            slowRenderCount: slowRenderCount,
             podRequests: podData
         });
     });
     
     // 完善 JSON summary 資料
     jsonData.summary.totalRequestsForDay = totalRequestsForDay;
+    jsonData.summary.totalSlowRendersForDay = totalSlowRendersForDay;
     jsonData.summary.activeTimeSlots = activeTimeSlots;
     
     // 找出最忙碌的時間槽
@@ -230,6 +283,7 @@ function generateOutput(podMinuteRequests, outputFile, sourceType, displayDate) 
     console.log(`\n統計資訊:`);
     console.log(`- 日期: ${displayDate}`);
     console.log(`- 總請求數: ${totalRequestsForDay.toLocaleString()}`);
+    console.log(`- 總慢渲染數: ${totalSlowRendersForDay.toLocaleString()}`);
     console.log(`- 活躍時間槽: ${activeTimeSlots} / ${allTimeSlots.length}`);
     console.log(`- Pod 數量: ${allPods.length}`);
     console.log(`- CSV 行數: ${csvRows.length + 1} (含標題)`);
@@ -314,24 +368,30 @@ async function analyzePodMinuteRequestsForDate(inputDate) {
             return;
         }
         
+        // 讀取慢渲染統計
+        console.log('\n讀取慢渲染統計資料...');
+        const categorySlowRenderStats = loadSlowRenderStats(targetDate, 'category');
+        const productSlowRenderStats = loadSlowRenderStats(targetDate, 'product');
+        const rootSlowRenderStats = loadSlowRenderStats(targetDate, 'root');
+        
         // 生成 Category 輸出 (CSV + JSON)
         if (Object.keys(categoryData).length > 0) {
-            generateOutput(categoryData, categoryOutputFile, 'Category', displayDate);
+            generateOutput(categoryData, categorySlowRenderStats, categoryOutputFile, 'Category', displayDate);
         } else {
             console.log('Category 數據為空，跳過生成');
         }
         
         // 生成 Product 輸出 (CSV + JSON)
         if (Object.keys(productData).length > 0) {
-            generateOutput(productData, productOutputFile, 'Product', displayDate);
+            generateOutput(productData, productSlowRenderStats, productOutputFile, 'Product', displayDate);
         } else {
             console.log('Product 數據為空，跳過生成');
         }
         
-        // 合併數據並生成 Combined 輸出 (CSV + JSON)
+        // 合併數據並生成 Combined 輸出 (CSV + JSON) - 使用 root 的慢渲染統計
         const combinedData = mergeDataSources(categoryData, productData);
         if (Object.keys(combinedData).length > 0) {
-            generateOutput(combinedData, combinedOutputFile, 'Combined', displayDate);
+            generateOutput(combinedData, rootSlowRenderStats, combinedOutputFile, 'Combined', displayDate);
         } else {
             console.log('Combined 數據為空，跳過生成');
         }

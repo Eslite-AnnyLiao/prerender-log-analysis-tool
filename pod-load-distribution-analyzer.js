@@ -75,7 +75,19 @@ function groupPodsByGeneration(podLoads) {
     return { generations, activePods };
 }
 
-function detectRollingUpdate(generations, podLoads, previousDayPods = null) {
+function getExpectedPodCount(dateStr) {
+    // 從 20251204 開始 pod 最低數量為 90
+    if (dateStr >= '20251204') {
+        return 90;
+    }
+    // 從 20251125 開始 pod 最低數量為 152
+    if (dateStr >= '20251125') {
+        return 152;
+    }
+    return 30; // 之前的預期數量
+}
+
+function detectRollingUpdate(generations, podLoads, previousDayPods = null, dateStr = null) {
     const activeGenerations = Object.keys(generations).filter(gen => 
         generations[gen].podCount > 0
     );
@@ -101,9 +113,9 @@ function detectRollingUpdate(generations, podLoads, previousDayPods = null) {
         
         // 檢測標準：
         // 1. 有新 pod 出現或舊 pod 消失
-        // 2. pod 總數暫時超過預期（30個）
+        // 2. pod 總數暫時超過預期（根據日期動態調整）
         // 3. 新 pod 負載明顯低於平均（剛啟動）
-        const expectedPodCount = 30;
+        const expectedPodCount = getExpectedPodCount(dateStr);
         const hasNewOrRemovedPods = newPods.length > 0 || removedPods.length > 0;
         const exceedsExpectedCount = currentPods.length > expectedPodCount;
         
@@ -152,9 +164,9 @@ function detectRollingUpdate(generations, podLoads, previousDayPods = null) {
     };
 }
 
-function analyzeLoadBalance(podLoads, previousDayPods = null) {
+function analyzeLoadBalance(podLoads, previousDayPods = null, dateStr = null) {
     const { generations, activePods } = groupPodsByGeneration(podLoads);
-    const rollingUpdateInfo = detectRollingUpdate(generations, podLoads, previousDayPods);
+    const rollingUpdateInfo = detectRollingUpdate(generations, podLoads, previousDayPods, dateStr);
     
     // 使用活躍 pod 進行分析 (排除零負載的 pod)
     const activeLoads = Object.values(activePods);
@@ -402,8 +414,8 @@ async function analyzePodLoadDistribution() {
                 continue;
             }
             
-            // 分析負載分佈（傳入前一天的 pod 資料用於檢測小版號 Rolling Update）
-            const loadAnalysis = analyzeLoadBalance(podLoads, previousDayPods);
+            // 分析負載分佈（傳入前一天的 pod 資料和日期用於檢測小版號 Rolling Update）
+            const loadAnalysis = analyzeLoadBalance(podLoads, previousDayPods, dateStr);
             const issues = identifyLoadIssues(podLoads, loadAnalysis);
             
             // 找出負載最高和最低的 pod

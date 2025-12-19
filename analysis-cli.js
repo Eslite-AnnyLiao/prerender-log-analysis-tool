@@ -68,6 +68,9 @@ function detectTargetFromPath(inputFile) {
     if (inputFile.includes('/product/') || inputFile.includes('-product')) {
         return 'product';
     }
+    if (inputFile.includes('/root/') || inputFile.includes('-root')) {
+        return 'root';
+    }
     return null;
 }
 
@@ -525,8 +528,8 @@ function createProgram() {
                     log.error('日期格式錯誤！請使用 YYYYMMDD 格式');
                     process.exit(1);
                 }
-                if (!['category', 'product'].includes(options.target)) {
-                    log.error('目標類型錯誤！請使用 category 或 product');
+                if (!['category', 'product', 'root'].includes(options.target)) {
+                    log.error('目標類型錯誤！請使用 category、product 或 root');
                     process.exit(1);
                 }
                 
@@ -543,6 +546,7 @@ function createProgram() {
                 log.info('  npm run cli -- extract-urls -f logs-20251125.csv');
                 log.info('  npm run cli -- extract-urls -d 20251125 -t product');
                 log.info('  npm run cli -- extract-urls -d 20251124 -t category -o my-urls.txt');
+                log.info('  npm run cli -- extract-urls -d 20251126 -t root');
                 process.exit(1);
             }
             

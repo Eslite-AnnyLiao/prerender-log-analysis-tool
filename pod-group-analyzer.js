@@ -333,9 +333,29 @@ function analyzeSlowRenderHourMinute(slowRenderPeriods) {
     const timeCount = {};
 
     slowRenderPeriods.forEach(period => {
-        if (period.timestamp) {
-            // 從完整時間戳記中提取 HH:MM 部分
-            const timePart = period.timestamp.split(' ')[1]?.substring(0, 5); // 取得 HH:MM
+        // 優先使用 userAgent 時間，如果沒有則使用 got 200 時間
+        let timestampToUse = period.userAgentTimestamp;
+        if (!timestampToUse) {
+            timestampToUse = period.timestamp;
+        }
+        
+        if (timestampToUse) {
+            // 處理時間戳記格式 - 支持兩種格式
+            let timePart = null;
+            
+            if (timestampToUse.includes(' ')) {
+                // 格式: "2025-12-16 10:00:00.000"
+                timePart = timestampToUse.split(' ')[1]?.substring(0, 5); // 取得 HH:MM
+            } else if (timestampToUse.includes('T')) {
+                // 格式: "2025-12-15T16:00:04.480Z" (ISO格式)
+                const date = new Date(timestampToUse);
+                // 轉換為台灣時區
+                const taiwanTime = new Date(date.getTime() + (8 * 60 * 60 * 1000));
+                const hours = taiwanTime.getUTCHours().toString().padStart(2, '0');
+                const minutes = taiwanTime.getUTCMinutes().toString().padStart(2, '0');
+                timePart = `${hours}:${minutes}`;
+            }
+            
             if (timePart) {
                 timeCount[timePart] = (timeCount[timePart] || 0) + 1;
             }
@@ -526,6 +546,7 @@ function analyzeSinglePod(userAgentRecords, renderTimeRecords, podName) {
 
     // reqId 關聯資料結構
     const reqIdToUserAgent = new Map();
+    const reqIdToUserAgentTimestamp = new Map(); // 新增：儲存 userAgent 的時間戳記
     const userAgentRenderTimes = {};
 
     // URL 分析相關資料結構
@@ -548,6 +569,11 @@ function analyzeSinglePod(userAgentRecords, renderTimeRecords, podName) {
             // 建立 reqId 到 userAgent 的映射
             if (reqId && userAgent) {
                 reqIdToUserAgent.set(reqId, userAgent);
+                // 同時保存 userAgent 的時間戳記
+                const userAgentTimestamp = convertToTaiwanTime(row.timestamp);
+                if (userAgentTimestamp) {
+                    reqIdToUserAgentTimestamp.set(reqId, userAgentTimestamp);
+                }
             }
 
             // 統計每小時資料筆數
@@ -608,10 +634,12 @@ function analyzeSinglePod(userAgentRecords, renderTimeRecords, podName) {
             const renderTime = payloadInfo.renderTime;
             const reqId = payloadInfo.reqId;
 
-            // 通過 reqId 查找對應的 userAgent
+            // 通過 reqId 查找對應的 userAgent 和時間戳記
             let matchedUserAgent = null;
+            let userAgentTimestamp = null;
             if (reqId && reqIdToUserAgent.has(reqId)) {
                 matchedUserAgent = reqIdToUserAgent.get(reqId);
+                userAgentTimestamp = reqIdToUserAgentTimestamp.get(reqId);
                 reqIdMatchedCount++;
 
                 // 記錄該 userAgent 的 render 時間
@@ -629,11 +657,12 @@ function analyzeSinglePod(userAgentRecords, renderTimeRecords, podName) {
                 userAgent: matchedUserAgent
             });
 
-            // 記錄大於 20000ms 的時段
+            // 記錄大於 8000ms 的時段
             if (renderTime > 8000) {
                 slowRenderPeriods.push({
                     renderTime: renderTime,
-                    timestamp: taiwanTimestamp,
+                    timestamp: taiwanTimestamp, // got 200 時間
+                    userAgentTimestamp: userAgentTimestamp, // userAgent 時間
                     url: url,
                     textPayload: textPayload,
                     reqId: reqId,
@@ -1237,7 +1266,10 @@ async function main() {
                     .filter(p => p.timestamp)
                     .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
                     .map(p => ({
-                        timestamp_taiwan: p.timestamp,
+                        timestamp_taiwan: p.userAgentTimestamp ? 
+                            (p.userAgentTimestamp.includes('T') ? convertToTaiwanTime(p.userAgentTimestamp) : p.userAgentTimestamp) : 
+                            p.timestamp, // 優先使用 userAgent 時間，如果是ISO格式則轉換
+                        timestamp_source: p.userAgentTimestamp ? 'user_agent_time' : 'got_200_time', // 時間來源
                         render_time_ms: p.renderTime,
                         url: p.url,
                         req_id: p.reqId,

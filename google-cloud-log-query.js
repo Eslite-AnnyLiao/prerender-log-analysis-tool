@@ -7,7 +7,7 @@ class RateLimiter {
     this.maxRequests = maxRequestsPerMinute;
     this.requests = [];
     this.retryCount = 0;
-    this.maxRetries = 3;
+    this.maxRetries = 10;
   }
 
   async waitIfNeeded() {

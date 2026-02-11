@@ -183,16 +183,20 @@ class SlowRenderingAnalyzer {
 
     async queryByDate(dateStr, options = {}) {
         const target = options.target || 'category';
-        
+        const hour = options.hour !== undefined ? options.hour : null;
+
         // 格式化日期 (支援 YYYYMMDD 或 YYYY-MM-DD 格式)
         const formattedDate = this.formatDate(dateStr);
-        
+
         // 建立檔案路徑
         const slowRenderFile = `./slow-render-periods-log/${target}/slow_render_periods_${formattedDate}.json`;
-        
+
         console.log(`🔍 查詢日期: ${formattedDate}`);
+        if (hour !== null) {
+            console.log(`🕐 指定時段: ${hour}:00 ~ ${hour}:59`);
+        }
         console.log(`📖 讀取檔案: ${slowRenderFile}`);
-        
+
         // 檢查檔案是否存在
         if (!fs.existsSync(slowRenderFile)) {
             throw new Error(`找不到日期 ${formattedDate} 的慢渲染檔案: ${slowRenderFile}`);
@@ -201,17 +205,28 @@ class SlowRenderingAnalyzer {
         try {
             // 讀取慢渲染記錄
             const data = JSON.parse(fs.readFileSync(slowRenderFile, 'utf8'));
-            
+
             if (!Array.isArray(data)) {
                 throw new Error('檔案格式錯誤，應為陣列格式');
             }
 
             // 篩選有完整時間戳記的記錄
-            const validRecords = data.filter(record => 
-                record.user_agent_record_time && 
-                record.got_200_record_time && 
+            let validRecords = data.filter(record =>
+                record.user_agent_record_time &&
+                record.got_200_record_time &&
                 record.pod_name
             );
+
+            // 如果指定了小時，進一步篩選該時段的記錄
+            if (hour !== null) {
+                validRecords = validRecords.filter(record => {
+                    // 解析 user_agent_record_time 的小時部分
+                    const recordTime = new Date(record.user_agent_record_time);
+                    const recordHour = recordTime.getHours();
+                    return recordHour === parseInt(hour);
+                });
+                console.log(`🔍 時段篩選後記錄數: ${validRecords.length}`);
+            }
 
             const over20sRecords = validRecords.filter(record => 
                 record.render_time_ms >= 20000

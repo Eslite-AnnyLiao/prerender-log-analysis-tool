@@ -94,6 +94,28 @@ function askThreshold() {
     });
 }
 
+function askHour() {
+    return new Promise((resolve) => {
+        rl.question('是否要指定特定時段？(y/n, 預設為 n): ', (answer) => {
+            if (answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes') {
+                rl.question('請輸入小時 (0-23): ', (hour) => {
+                    const hourNum = parseInt(hour);
+                    if (hourNum >= 0 && hourNum <= 23) {
+                        console.log(`✅ 已選擇時段: ${hourNum}:00 ~ ${hourNum}:59`);
+                        resolve(hourNum);
+                    } else {
+                        console.log('❌ 無效的小時，將查詢全天記錄');
+                        resolve(null);
+                    }
+                });
+            } else {
+                console.log('✅ 將查詢全天記錄');
+                resolve(null);
+            }
+        });
+    });
+}
+
 async function runFilterSlowRenders(date, threshold = 20000, target = 'category') {
     try {
         console.log(`\n🔍 執行 filter-slow-renders.js...`);
@@ -115,16 +137,16 @@ async function runFilterSlowRenders(date, threshold = 20000, target = 'category'
     }
 }
 
-async function queryLogs(analyzer, date, options, target = 'category', shouldAskFilter = true) {
+async function queryLogs(analyzer, date, options, target = 'category', shouldAskFilter = true, hour = null) {
     try {
         // 詢問是否先執行 filter-slow-renders
         if (shouldAskFilter) {
             const shouldFilter = await askFilterFirst();
-            
+
             if (shouldFilter) {
                 const threshold = await askThreshold();
                 const filterResult = await runFilterSlowRenders(date, threshold, target);
-                
+
                 if (!filterResult.success) {
                     console.log('⚠️ filter-slow-renders 執行失敗，是否繼續查詢？');
                     const continueQuery = await new Promise((resolve) => {
@@ -132,24 +154,27 @@ async function queryLogs(analyzer, date, options, target = 'category', shouldAsk
                             resolve(!answer || answer.toLowerCase() === 'y');
                         });
                     });
-                    
+
                     if (!continueQuery) {
                         return null;
                     }
                 }
-                
+
                 console.log('\n⏳ 等待 2 秒後開始查詢...');
                 await new Promise(resolve => setTimeout(resolve, 2000));
             }
         }
-        
+
         console.log(`\n🚀 開始查詢 ${date} 的慢渲染日誌...`);
         console.log(`🎯 目標類型: ${target}`);
-        
-        // 添加 target 到 options
-        const queryOptions = { ...options, target };
+        if (hour !== null) {
+            console.log(`🕐 時段範圍: ${hour}:00 ~ ${hour}:59`);
+        }
+
+        // 添加 target 和 hour 到 options
+        const queryOptions = { ...options, target, hour };
         const result = await analyzer.queryByDate(date, queryOptions);
-        
+
         if (result.success) {
             console.log('\n✅ 查詢完成！');
             console.log(`📊 統計資訊:`);
@@ -158,10 +183,13 @@ async function queryLogs(analyzer, date, options, target = 'category', shouldAsk
             console.log(`  • 查詢記錄數: ${result.queriedRecords}`);
             console.log(`  • 成功查詢: ${result.successfulQueries}`);
             console.log(`  • 失敗查詢: ${result.failedQueries}`);
+            if (hour !== null) {
+                console.log(`  • 時段篩選: ${hour}:00 ~ ${hour}:59`);
+            }
         } else {
             console.log(`❌ 查詢失敗: ${result.message}`);
         }
-        
+
         return result;
     } catch (error) {
         console.error(`❌ 查詢過程中發生錯誤: ${error.message}`);
@@ -202,24 +230,26 @@ async function main() {
             case '1':
                 const date1 = await askDate();
                 const target1 = await askTarget();
+                const hour1 = await askHour();
                 const options1 = await askQueryOptions();
-                await queryLogs(analyzer, date1, options1, target1);
+                await queryLogs(analyzer, date1, options1, target1, true, hour1);
                 break;
-                
+
             case '2':
                 const date2 = await askDate();
                 const target2 = await askTarget();
                 await analyzeCauses(analyzer, date2, target2);
                 break;
-                
+
             case '3':
                 const date3 = await askDate();
                 const target3 = await askTarget();
+                const hour3 = await askHour();
                 const options3 = await askQueryOptions();
-                
+
                 console.log('\n🔄 執行完整流程...');
-                const queryResult = await queryLogs(analyzer, date3, options3, target3);
-                
+                const queryResult = await queryLogs(analyzer, date3, options3, target3, true, hour3);
+
                 if (queryResult && queryResult.success && queryResult.successfulQueries > 0) {
                     console.log('\n⏳ 等待 5 秒後開始分析...');
                     await new Promise(resolve => setTimeout(resolve, 5000));

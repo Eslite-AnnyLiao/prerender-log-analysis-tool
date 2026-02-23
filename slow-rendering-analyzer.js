@@ -1045,7 +1045,7 @@ class SlowRenderingAnalyzer {
         ];
 
         const anomalies = [];
-        
+
         logs.forEach(log => {
             errorPatterns.forEach(pattern => {
                 if (pattern.test(log.message)) {
@@ -1064,18 +1064,18 @@ class SlowRenderingAnalyzer {
         const requestUrl = this.extractRequestURL(logs, reqId);
         const urlAnalysis = this.analyzeRequestURL(requestUrl);
         let resourceRenderMismatch = null;
-        
+
         if (renderTimeInfo.renderTimeMs && resourceLoadingInfo.totalResources > 0) {
             // 計算總資源載入時間（類似 performance-analyzer.js 的邏輯）
             const totalResourceLoadingTime = this.calculateTotalResourceLoadingTime(logs);
-            
+
             // 如果總資源載入時間與整體渲染時間差距過大，認為異常
             const timeDifference = renderTimeInfo.renderTimeMs - totalResourceLoadingTime;
-            const isSignificantMismatch = 
-                totalResourceLoadingTime > 0 && 
+            const isSignificantMismatch =
+                totalResourceLoadingTime > 0 &&
                 timeDifference > 20000 && // 差距超過 20 秒
                 (timeDifference / renderTimeInfo.renderTimeMs) > 0.8; // 差距占總時間80%以上
-                
+
             if (isSignificantMismatch) {
                 resourceRenderMismatch = {
                     renderTime: renderTimeInfo.renderTimeMs,
@@ -1088,9 +1088,15 @@ class SlowRenderingAnalyzer {
             }
         }
 
+        // 分析未結束的資源
+        const unfinishedResources = this.analyzeUnfinishedResources(logs, reqId);
+
         const possibleCauses = this.identifyPossibleCauses(logs);
         if (resourceRenderMismatch) {
             possibleCauses.push('資源載入與渲染時間不符');
+        }
+        if (unfinishedResources.count > 0) {
+            possibleCauses.push(`有 ${unfinishedResources.count} 個資源未完成載入`);
         }
 
         return {
@@ -1100,6 +1106,7 @@ class SlowRenderingAnalyzer {
             requestUrl: requestUrl,
             urlAnalysis: urlAnalysis,
             resourceRenderMismatch: resourceRenderMismatch,
+            unfinishedResources: unfinishedResources,
             renderTimeAnalysis: renderTimeInfo.renderTimeMs ? {
                 renderTime: renderTimeInfo.renderTimeMs,
                 resourceLoadingTime: resourceLoadingInfo.longestDuration,
@@ -1109,11 +1116,152 @@ class SlowRenderingAnalyzer {
         };
     }
 
+    analyzeUnfinishedResources(logs, reqId = null) {
+        const resourceEvents = new Map(); // URL -> { starts: [], ends: [] }
+
+        logs.forEach(log => {
+            // 如果提供 reqId，只分析含有該 reqId 的資源載入記錄
+            if (reqId && !log.message.includes(`[reqId: ${reqId}]`)) {
+                return;
+            }
+
+            // 解析新格式： "2025-10-19T12:33:56.984Z + 1 https://..." (+ = 開始)
+            // 或 "2025-10-19T12:33:56.984Z - 1 https://..." (- = 完成)
+            const newFormatMatch = log.message.match(/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)\s+([+-])\s+(\d+)\s+(https?:\/\/[^\s\[]+)/);
+
+            if (newFormatMatch) {
+                const timestamp = newFormatMatch[1];
+                const action = newFormatMatch[2]; // + 或 -
+                const url = newFormatMatch[4];
+
+                if (!resourceEvents.has(url)) {
+                    resourceEvents.set(url, { starts: [], ends: [] });
+                }
+
+                const urlData = resourceEvents.get(url);
+                // 修正：+ 表示開始，- 表示結束
+                if (action === '+') {
+                    urlData.starts.push({ timestamp, message: log.message });
+                } else if (action === '-') {
+                    urlData.ends.push({ timestamp, message: log.message });
+                }
+                return;
+            }
+
+            // 解析舊格式： "timestamp + 1 https://..." (+ = 開始) 或 "timestamp - 1 https://..." (- = 完成)
+            const oldFormatMatch = log.message.match(/([+-])\s+\d+\s+(https?:\/\/[^\s\[]+)/);
+            if (oldFormatMatch) {
+                const timestamp = log.timestamp;
+                const action = oldFormatMatch[1];
+                const url = oldFormatMatch[2];
+
+                if (!resourceEvents.has(url)) {
+                    resourceEvents.set(url, { starts: [], ends: [] });
+                }
+
+                const urlData = resourceEvents.get(url);
+                // 修正：+ 表示開始，- 表示結束
+                if (action === '+') {
+                    urlData.starts.push({ timestamp, message: log.message });
+                } else if (action === '-') {
+                    urlData.ends.push({ timestamp, message: log.message });
+                }
+            }
+        });
+
+        // 找出未結束的資源（考慮時間順序）
+        const unfinishedResources = [];
+
+        resourceEvents.forEach((events, url) => {
+            // 按時間排序所有事件
+            const allEvents = [];
+
+            events.starts.forEach(start => {
+                allEvents.push({
+                    type: 'start',
+                    timestamp: start.timestamp,
+                    message: start.message
+                });
+            });
+
+            events.ends.forEach(end => {
+                allEvents.push({
+                    type: 'end',
+                    timestamp: end.timestamp,
+                    message: end.message
+                });
+            });
+
+            // 按時間排序
+            allEvents.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+            // 追蹤未配對的開始事件
+            let unmatchedStarts = 0;
+            const detailedEvents = [];
+
+            allEvents.forEach(event => {
+                if (event.type === 'start') {
+                    unmatchedStarts++;
+                    detailedEvents.push({
+                        type: 'start',
+                        timestamp: event.timestamp,
+                        status: 'pending'
+                    });
+                } else if (event.type === 'end') {
+                    if (unmatchedStarts > 0) {
+                        unmatchedStarts--;
+                        detailedEvents.push({
+                            type: 'end',
+                            timestamp: event.timestamp,
+                            status: 'matched'
+                        });
+                    } else {
+                        // 結束事件出現在開始事件之前（不正常）
+                        detailedEvents.push({
+                            type: 'end',
+                            timestamp: event.timestamp,
+                            status: 'orphan'
+                        });
+                    }
+                }
+            });
+
+            const startCount = events.starts.length;
+            const endCount = events.ends.length;
+
+            // 如果有未配對的開始事件，表示有資源未完成
+            if (unmatchedStarts > 0) {
+                unfinishedResources.push({
+                    url: url,
+                    type: this.getResourceType(url),
+                    startCount: startCount,
+                    endCount: endCount,
+                    unfinishedCount: unmatchedStarts,
+                    lastStartTime: events.starts[events.starts.length - 1]?.timestamp,
+                    lastStartMessage: events.starts[events.starts.length - 1]?.message,
+                    detailedEvents: detailedEvents
+                });
+            }
+        });
+
+        // 按未完成數量排序
+        unfinishedResources.sort((a, b) => b.unfinishedCount - a.unfinishedCount);
+
+        return {
+            count: unfinishedResources.length,
+            totalUnfinished: unfinishedResources.reduce((sum, r) => sum + r.unfinishedCount, 0),
+            resources: unfinishedResources,
+            summary: unfinishedResources.length > 0
+                ? `發現 ${unfinishedResources.length} 個 URL 有未完成的載入，總計 ${unfinishedResources.reduce((sum, r) => sum + r.unfinishedCount, 0)} 次未完成載入`
+                : '所有資源都已完成載入'
+        };
+    }
+
     calculateTotalResourceLoadingTime(logs) {
         // 使用類似 performance-analyzer.js 的邏輯計算總載入時間
         const startTimes = [];
         const endTimes = [];
-        
+
         logs.forEach(log => {
             // 簡化匹配：查找包含 + 或 - 的資源載入日誌
             if (log.message.includes(' + ')) {
@@ -1130,14 +1278,14 @@ class SlowRenderingAnalyzer {
                 }
             }
         });
-        
+
         // 計算實際總時間（從最早開始到最晚結束）
         if (startTimes.length > 0 && endTimes.length > 0) {
             const earliestStart = Math.min(...startTimes);
             const latestEnd = Math.max(...endTimes);
             return latestEnd - earliestStart;
         }
-        
+
         return 0;
     }
 
@@ -1232,16 +1380,36 @@ class SlowRenderingAnalyzer {
 
         summary.push('');
         summary.push('詳細分析:');
-        
+
         successfulAnalyses.forEach(result => {
             summary.push(`\nreqId: ${result.reqId}`);
             summary.push(`檔案: ${result.filename}`);
             summary.push(`原因: ${this.getCauseDisplayName(result.analysis.cause)}`);
             summary.push(`說明: ${result.analysis.details.description || '無詳細說明'}`);
-            
+
             // 顯示 URL 分析資訊
             if (result.analysis.details.urlAnalysis && result.analysis.details.urlAnalysis.url) {
                 summary.push(`URL: ${result.analysis.details.urlAnalysis.url}`);
+            }
+
+            // 如果是其他異常且有未結束的資源，顯示詳細資訊
+            if (result.analysis.cause === 'other_anomaly' &&
+                result.analysis.details.unfinishedResources &&
+                result.analysis.details.unfinishedResources.count > 0) {
+                const unfinished = result.analysis.details.unfinishedResources;
+                summary.push(`未結束資源: ${unfinished.summary}`);
+
+                // 顯示前 5 個未結束的資源
+                const topResources = unfinished.resources.slice(0, 5);
+                if (topResources.length > 0) {
+                    summary.push(`  詳細列表 (顯示前 ${topResources.length} 個):`);
+                    topResources.forEach((resource, index) => {
+                        const fileName = resource.url.split('/').pop() || resource.url;
+                        summary.push(`    ${index + 1}. [${resource.type}] ${fileName}`);
+                        summary.push(`       開始: ${resource.startCount} 次, 結束: ${resource.endCount} 次, 未完成: ${resource.unfinishedCount} 次`);
+                        summary.push(`       完整 URL: ${resource.url}`);
+                    });
+                }
             }
         });
 

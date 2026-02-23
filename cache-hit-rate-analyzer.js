@@ -267,39 +267,138 @@ ${this.results.map(r =>
     }
 }
 
+// 顯示使用說明
+function showUsage() {
+    console.log(`
+📊 Cache Hit Rate 分析工具
+========================================
+
+使用方法:
+  node cache-hit-rate-analyzer.js <開始日期> <結束日期> [資料夾]
+
+參數說明:
+  開始日期    YYYYMMDD 格式 (必需)
+  結束日期    YYYYMMDD 格式 (必需)
+  資料夾      子資料夾名稱 (可選，預設: root)
+              可選值: root, category, product, L1, L2, ...
+
+範例:
+  # 分析 root 資料夾中 2026/01/24 到 2026/02/10 的資料
+  node cache-hit-rate-analyzer.js 20260124 20260210
+
+  # 分析 category 資料夾
+  node cache-hit-rate-analyzer.js 20260124 20260210 category
+
+  # 分析 product 資料夾
+  node cache-hit-rate-analyzer.js 20251125 20251228 product
+
+  # 分析 L1 資料夾
+  node cache-hit-rate-analyzer.js 20260124 20260210 L1
+
+注意:
+  所有資料都從 ./daily-analysis-result 目錄讀取
+`);
+}
+
+// 解析命令行參數
+function parseArgs() {
+    const args = process.argv.slice(2);
+
+    if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
+        showUsage();
+        process.exit(0);
+    }
+
+    if (args.length < 2) {
+        console.error('❌ 錯誤: 請提供開始日期和結束日期');
+        showUsage();
+        process.exit(1);
+    }
+
+    const startDate = args[0];
+    const endDate = args[1];
+    const folder = args[2] || 'root';
+
+    // 驗證日期格式
+    if (!/^\d{8}$/.test(startDate) || !/^\d{8}$/.test(endDate)) {
+        console.error('❌ 錯誤: 日期格式必須是 YYYYMMDD');
+        process.exit(1);
+    }
+
+    // 驗證日期範圍
+    if (startDate > endDate) {
+        console.error('❌ 錯誤: 開始日期不能晚於結束日期');
+        process.exit(1);
+    }
+
+    // 組合完整路徑
+    const baseDir = './daily-analysis-result';
+    const dir = path.join(baseDir, folder);
+
+    // 自動生成輸出檔名
+    const dateRange = `${startDate.substring(4)}-${endDate.substring(4)}`;
+    const outputFile = `cache-hit-rate-analysis-${folder}-${dateRange}.txt`;
+
+    return { startDate, endDate, folder, dir, outputFile };
+}
+
 // 主函數
 async function main() {
+    const { startDate, endDate, folder, dir, outputFile } = parseArgs();
+
+    console.log('🚀 Cache Hit Rate 分析工具啟動');
+    console.log('========================================');
+    console.log(`📅 分析日期範圍: ${startDate} ~ ${endDate}`);
+    console.log(`📂 分析資料夾: ${folder}`);
+    console.log(`📁 完整路徑: ${dir}`);
+    console.log(`📄 輸出檔案: ${outputFile}`);
+    console.log('');
+
     const analyzer = new CacheHitRateAnalyzer();
-    
+
     try {
-        // 分析全站 root 資料 (1125-1228)
-        const rootDir = './daily-analysis-result/root';
-        const report = analyzer.analyzeTimeRange(rootDir, '20251125', '20251228');
-        
+        // 檢查目錄是否存在
+        if (!fs.existsSync(dir)) {
+            console.error(`❌ 錯誤: 目錄不存在 ${dir}`);
+            console.log(`💡 提示: 請確認 ./daily-analysis-result/${folder} 目錄是否存在`);
+            process.exit(1);
+        }
+
+        // 分析資料
+        const report = analyzer.analyzeTimeRange(dir, startDate, endDate);
+
         console.log(report);
-        
+
         // 儲存報告
-        analyzer.saveReport(report, './cache-hit-rate-analysis-root-1125-1228.txt');
-        
+        analyzer.saveReport(report, `./${outputFile}`);
+
         // 同時儲存詳細的 JSON 資料
+        const jsonOutputFile = outputFile.replace('.txt', '.json');
         const detailedResults = {
             analysis_time: new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }),
+            analysis_folder: folder,
+            analysis_directory: dir,
+            date_range: {
+                start: startDate,
+                end: endDate
+            },
             cache_threshold_ms: analyzer.cacheThreshold,
             results: analyzer.results,
             summary: {
                 total_records: analyzer.results.reduce((sum, r) => sum + r.totalRecords, 0),
                 total_cache_hits: analyzer.results.reduce((sum, r) => sum + r.estimatedCacheHits, 0),
-                overall_cache_hit_rate: analyzer.results.reduce((sum, r) => sum + r.totalRecords, 0) > 0 ? 
+                overall_cache_hit_rate: analyzer.results.reduce((sum, r) => sum + r.totalRecords, 0) > 0 ?
                     (analyzer.results.reduce((sum, r) => sum + r.estimatedCacheHits, 0) / analyzer.results.reduce((sum, r) => sum + r.totalRecords, 0) * 100) : 0,
                 average_daily_cache_hit_rate: analyzer.results.reduce((sum, r) => sum + r.cacheHitRate, 0) / analyzer.results.length
             }
         };
-        
-        fs.writeFileSync('./cache-hit-rate-analysis-root-1125-1228.json', JSON.stringify(detailedResults, null, 2));
-        console.log(`✅ 詳細 JSON 資料已儲存至: ./cache-hit-rate-analysis-root-1125-1228.json`);
-        
+
+        fs.writeFileSync(`./${jsonOutputFile}`, JSON.stringify(detailedResults, null, 2));
+        console.log(`✅ 詳細 JSON 資料已儲存至: ./${jsonOutputFile}`);
+
     } catch (error) {
         console.error('❌ 分析過程中發生錯誤:', error.message);
+        process.exit(1);
     }
 }
 

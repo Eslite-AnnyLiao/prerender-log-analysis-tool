@@ -36,6 +36,7 @@ daily-peak-qps-analysis/
 pod-load-distribution-analysis/
 slow-render-query-results/
 url-extract/
+pod-minute-request-result/
 
 # Data Files (CSV, JSON logs)
 to-analyze-daily-data/

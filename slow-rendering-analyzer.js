@@ -1392,6 +1392,15 @@ class SlowRenderingAnalyzer {
                 summary.push(`URL: ${result.analysis.details.urlAnalysis.url}`);
             }
 
+            // 如果是 resource_timeout，顯示最慢資源
+            if (result.analysis.cause === 'resource_timeout' &&
+                result.analysis.details.resourceLoadingAnalysis &&
+                result.analysis.details.resourceLoadingAnalysis.longestResource) {
+                const lr = result.analysis.details.resourceLoadingAnalysis.longestResource;
+                summary.push(`最慢資源: ${lr.url}`);
+                summary.push(`  類型: ${lr.type}  耗時: ${lr.duration} ms`);
+            }
+
             // 如果是其他異常且有未結束的資源，顯示詳細資訊
             if (result.analysis.cause === 'other_anomaly' &&
                 result.analysis.details.unfinishedResources &&

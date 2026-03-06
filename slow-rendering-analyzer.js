@@ -120,23 +120,24 @@ class SlowRenderingAnalyzer {
         const target = options.target || 'category';
         
         const batchOutputDir = `${this.baseOutputDir}/${batchDate}/${target}/batch-query`;
+        const logDataDir = `${batchOutputDir}/log-data`;
         const fs = require('fs');
-        if (!fs.existsSync(batchOutputDir)) {
-            fs.mkdirSync(batchOutputDir, { recursive: true });
-            console.log(`📁 建立批次查詢輸出目錄: ${batchOutputDir}`);
+        if (!fs.existsSync(logDataDir)) {
+            fs.mkdirSync(logDataDir, { recursive: true });
+            console.log(`📁 建立批次查詢輸出目錄: ${logDataDir}`);
         }
-        
+
         console.log(`🔄 開始批次查詢 ${records.length} 筆慢渲染記錄...`);
-        console.log(`📂 所有檔案將存放在: ${batchOutputDir}`);
-        
+        console.log(`📂 所有檔案將存放在: ${logDataDir}`);
+
         for (let i = 0; i < records.length; i++) {
             const record = records[i];
             console.log(`\n[${i + 1}/${records.length}]`);
-            
+
             try {
                 const result = await this.querySpecificSlowRender(record, {
                     ...options,
-                    outputDir: batchOutputDir,
+                    outputDir: logDataDir,
                     outputFilename: `slow_render_${record.req_id || (i + 1).toString().padStart(4, '0')}.csv`,
                     dateStr: batchDate
                 });
@@ -328,9 +329,11 @@ class SlowRenderingAnalyzer {
             throw new Error(`找不到批次查詢目錄: ${batchQueryDir}`);
         }
 
-        const csvFiles = fs.readdirSync(batchQueryDir).filter(file => file.endsWith('.csv'));
+        const logDataDir = `${batchQueryDir}/log-data`;
+        const csvSourceDir = fs.existsSync(logDataDir) ? logDataDir : batchQueryDir;
+        const csvFiles = fs.readdirSync(csvSourceDir).filter(file => file.endsWith('.csv'));
         if (csvFiles.length === 0) {
-            throw new Error(`目錄中沒有找到 CSV 檔案: ${batchQueryDir}`);
+            throw new Error(`目錄中沒有找到 CSV 檔案: ${csvSourceDir}`);
         }
 
         console.log(`🔍 開始分析 ${formattedDate} 的慢渲染原因`);
@@ -341,9 +344,9 @@ class SlowRenderingAnalyzer {
         for (const csvFile of csvFiles) {
             const reqId = this.extractReqIdFromFilename(csvFile);
             console.log(`\n📊 分析檔案: ${csvFile} (reqId: ${reqId})`);
-            
+
             try {
-                const analysis = await this.analyzeSingleCSV(path.join(batchQueryDir, csvFile), reqId);
+                const analysis = await this.analyzeSingleCSV(path.join(csvSourceDir, csvFile), reqId);
                 analysisResults.push({
                     filename: csvFile,
                     reqId: reqId,
@@ -1367,6 +1370,35 @@ class SlowRenderingAnalyzer {
                     });
             }
             
+            // 最慢資源排行 (resource_timeout)
+            const resourceTimeoutCases = successfulAnalyses.filter(r =>
+                r.analysis.cause === 'resource_timeout' &&
+                r.analysis.details.resourceLoadingAnalysis &&
+                r.analysis.details.resourceLoadingAnalysis.longestResource
+            );
+            if (resourceTimeoutCases.length > 0) {
+                summary.push('');
+                summary.push('  最慢資源排行:');
+                const resourceStats = {};
+                resourceTimeoutCases.forEach(result => {
+                    const lr = result.analysis.details.resourceLoadingAnalysis.longestResource;
+                    const normalizedUrl = lr.url.split('?')[0].replace(/\/\d{6,}/g, '/{id}');
+                    if (!resourceStats[normalizedUrl]) {
+                        resourceStats[normalizedUrl] = { url: normalizedUrl, type: lr.type, count: 0, durations: [] };
+                    }
+                    resourceStats[normalizedUrl].count++;
+                    resourceStats[normalizedUrl].durations.push(lr.duration);
+                });
+                Object.values(resourceStats)
+                    .sort((a, b) => b.count - a.count)
+                    .forEach((stat, index) => {
+                        const avg = Math.round(stat.durations.reduce((s, d) => s + d, 0) / stat.durations.length);
+                        const max = Math.max(...stat.durations);
+                        summary.push(`    ${index + 1}. ${stat.url}  [${stat.type}]`);
+                        summary.push(`       出現: ${stat.count} 次  平均耗時: ${avg} ms  最長: ${max} ms`);
+                    });
+            }
+
             if (urlAnalysisStats.urlList && urlAnalysisStats.urlList.length > 0) {
                 summary.push('');
                 summary.push('所有 Request URL 列表:');

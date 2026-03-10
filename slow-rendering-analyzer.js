@@ -418,10 +418,11 @@ class SlowRenderingAnalyzer {
             log.message.includes(`[reqId: ${reqId}]`)
         );
         
-        // 系統訊息包括 inflight 和瀏覽器重啟訊息
-        const systemLogs = logs.filter(log => 
+        // 系統訊息包括 inflight、瀏覽器重啟、TIMEOUT 訊息
+        const systemLogs = logs.filter(log =>
             log.message.includes('Adding request to in-flight') ||
-            log.message.toLowerCase().includes('restarting browser')
+            log.message.toLowerCase().includes('restarting browser') ||
+            log.message.includes('[TIMEOUT]')
         );
         
         // 合併用於分析的日誌 (避免重複)
@@ -537,19 +538,10 @@ class SlowRenderingAnalyzer {
         const renderTimeInfo = this.extractRenderTime(logs);
         const resourceLoadingInfo = this.analyzeResourceLoadingTimes(logs, reqId);
         
-        // 如果有明顯的 timeout 訊息，但還要檢查資源載入時間是否合理
-        const hasTimeoutMessages = logs.some(log => /\[TIMEOUT\]|timeout|timed out/i.test(log.message));
+        // 有 [TIMEOUT] 訊息一律歸類為其他異常，由 analyzeOtherAnomalies 分析未完成資源
+        const hasTimeoutMessages = logs.some(log => /\[TIMEOUT\]/i.test(log.message));
         if (hasTimeoutMessages) {
-            // 即使有 timeout，如果資源載入很快但 render time 很長，仍歸類為異常
-            if (renderTimeInfo.renderTimeMs && resourceLoadingInfo.longestDuration) {
-                const isResourceFastButRenderSlow = 
-                    resourceLoadingInfo.longestDuration < 2000 && renderTimeInfo.renderTimeMs > 10000;
-                
-                if (isResourceFastButRenderSlow) {
-                    return false; // 歸類為其他異常
-                }
-            }
-            return true; // timeout 且資源載入時間合理，認定為資源載入問題
+            return false;
         }
         
         // 如果有慢資源 (>3秒)，認定為資源載入問題
@@ -1094,6 +1086,9 @@ class SlowRenderingAnalyzer {
         // 分析未結束的資源
         const unfinishedResources = this.analyzeUnfinishedResources(logs, reqId);
 
+        // 判斷是否為 timeout 案例
+        const isTimeoutCase = logs.some(log => /\[TIMEOUT\]/i.test(log.message));
+
         const possibleCauses = this.identifyPossibleCauses(logs);
         if (resourceRenderMismatch) {
             possibleCauses.push('資源載入與渲染時間不符');
@@ -1102,14 +1097,25 @@ class SlowRenderingAnalyzer {
             possibleCauses.push(`有 ${unfinishedResources.count} 個資源未完成載入`);
         }
 
+        let description = '其他異常情況導致渲染延遲';
+        if (isTimeoutCase) {
+            if (unfinishedResources.count > 0) {
+                description = `頁面 timeout，有 ${unfinishedResources.count} 個資源未完成載入`;
+            } else {
+                description = `頁面 timeout，所有資源已完成，最慢資源耗時 ${resourceLoadingInfo.longestDuration} ms`;
+            }
+        }
+
         return {
-            description: '其他異常情況導致渲染延遲',
+            description: description,
+            isTimeoutCase: isTimeoutCase,
             anomalyCount: anomalies.length,
             anomalies: anomalies,
             requestUrl: requestUrl,
             urlAnalysis: urlAnalysis,
             resourceRenderMismatch: resourceRenderMismatch,
             unfinishedResources: unfinishedResources,
+            longestResource: resourceLoadingInfo.longestResource || null,
             renderTimeAnalysis: renderTimeInfo.renderTimeMs ? {
                 renderTime: renderTimeInfo.renderTimeMs,
                 resourceLoadingTime: resourceLoadingInfo.longestDuration,
@@ -1433,23 +1439,27 @@ class SlowRenderingAnalyzer {
                 summary.push(`  類型: ${lr.type}  耗時: ${lr.duration} ms`);
             }
 
-            // 如果是其他異常且有未結束的資源，顯示詳細資訊
-            if (result.analysis.cause === 'other_anomaly' &&
-                result.analysis.details.unfinishedResources &&
-                result.analysis.details.unfinishedResources.count > 0) {
-                const unfinished = result.analysis.details.unfinishedResources;
-                summary.push(`未結束資源: ${unfinished.summary}`);
+            // 如果是其他異常（含 timeout 案例），顯示未結束資源或最慢資源
+            if (result.analysis.cause === 'other_anomaly') {
+                const details = result.analysis.details;
+                const unfinished = details.unfinishedResources;
 
-                // 顯示前 5 個未結束的資源
-                const topResources = unfinished.resources.slice(0, 5);
-                if (topResources.length > 0) {
-                    summary.push(`  詳細列表 (顯示前 ${topResources.length} 個):`);
-                    topResources.forEach((resource, index) => {
-                        const fileName = resource.url.split('/').pop() || resource.url;
-                        summary.push(`    ${index + 1}. [${resource.type}] ${fileName}`);
-                        summary.push(`       開始: ${resource.startCount} 次, 結束: ${resource.endCount} 次, 未完成: ${resource.unfinishedCount} 次`);
-                        summary.push(`       完整 URL: ${resource.url}`);
-                    });
+                if (unfinished && unfinished.count > 0) {
+                    summary.push(`未結束資源: ${unfinished.summary}`);
+                    const topResources = unfinished.resources.slice(0, 5);
+                    if (topResources.length > 0) {
+                        summary.push(`  詳細列表 (顯示前 ${topResources.length} 個):`);
+                        topResources.forEach((resource, index) => {
+                            const fileName = resource.url.split('/').pop() || resource.url;
+                            summary.push(`    ${index + 1}. [${resource.type}] ${fileName}`);
+                            summary.push(`       開始: ${resource.startCount} 次, 結束: ${resource.endCount} 次, 未完成: ${resource.unfinishedCount} 次`);
+                            summary.push(`       完整 URL: ${resource.url}`);
+                        });
+                    }
+                } else if (details.isTimeoutCase && details.longestResource) {
+                    const lr = details.longestResource;
+                    summary.push(`最慢資源: ${lr.url}`);
+                    summary.push(`  類型: ${lr.type}  耗時: ${lr.duration} ms`);
                 }
             }
         });

@@ -336,6 +336,25 @@ class SlowRenderingAnalyzer {
             throw new Error(`目錄中沒有找到 CSV 檔案: ${csvSourceDir}`);
         }
 
+        // 讀取 batch_query_summary.json 取得原始記錄（爬蟲進來時間等）
+        const summaryJsonPath = `${batchQueryDir}/batch_query_summary.json`;
+        const reqIdToRecordMap = {};
+        if (fs.existsSync(summaryJsonPath)) {
+            try {
+                const summaryData = JSON.parse(fs.readFileSync(summaryJsonPath, 'utf8'));
+                if (summaryData.results) {
+                    summaryData.results.forEach(r => {
+                        if (r.record && r.record.req_id) {
+                            reqIdToRecordMap[r.record.req_id] = r.record;
+                        }
+                    });
+                }
+                console.log(`📋 已載入 ${Object.keys(reqIdToRecordMap).length} 筆原始記錄資料`);
+            } catch (e) {
+                console.warn('⚠️ 無法讀取 batch_query_summary.json:', e.message);
+            }
+        }
+
         console.log(`🔍 開始分析 ${formattedDate} 的慢渲染原因`);
         console.log(`📁 找到 ${csvFiles.length} 個 CSV 檔案`);
 
@@ -367,7 +386,7 @@ class SlowRenderingAnalyzer {
         const outputFile = `${batchQueryDir}/slow_rendering_analysis_${formattedDate}.json`;
         fs.writeFileSync(outputFile, JSON.stringify(analysisResults, null, 2), 'utf8');
         
-        const summary = this.generateAnalysisSummary(analysisResults);
+        const summary = this.generateAnalysisSummary(analysisResults, reqIdToRecordMap);
         const summaryFile = `${batchQueryDir}/slow_rendering_summary_${formattedDate}.txt`;
         fs.writeFileSync(summaryFile, summary, 'utf8');
         
@@ -1320,7 +1339,7 @@ class SlowRenderingAnalyzer {
         return causes.length > 0 ? causes : ['未知原因'];
     }
 
-    generateAnalysisSummary(results) {
+    generateAnalysisSummary(results, recordMap = {}) {
         const summary = [];
         summary.push('慢渲染原因分析摘要');
         summary.push('='.repeat(50));
@@ -1422,6 +1441,22 @@ class SlowRenderingAnalyzer {
         successfulAnalyses.forEach(result => {
             summary.push(`\nreqId: ${result.reqId}`);
             summary.push(`檔案: ${result.filename}`);
+
+            // 顯示爬蟲進來時間與渲染時間
+            const originalRecord = recordMap[result.reqId];
+            if (originalRecord) {
+                if (originalRecord.user_agent_record_time) {
+                    const crawlerTime = new Date(originalRecord.user_agent_record_time);
+                    const formattedCrawlerTime = isNaN(crawlerTime.getTime())
+                        ? originalRecord.user_agent_record_time
+                        : crawlerTime.toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false });
+                    summary.push(`爬蟲進來時間: ${formattedCrawlerTime} (${originalRecord.user_agent_record_time})`);
+                }
+                if (originalRecord.render_time_ms !== undefined && originalRecord.render_time_ms !== null) {
+                    summary.push(`渲染時間: ${originalRecord.render_time_ms} ms (${(originalRecord.render_time_ms / 1000).toFixed(1)} 秒)`);
+                }
+            }
+
             summary.push(`原因: ${this.getCauseDisplayName(result.analysis.cause)}`);
             summary.push(`說明: ${result.analysis.details.description || '無詳細說明'}`);
 

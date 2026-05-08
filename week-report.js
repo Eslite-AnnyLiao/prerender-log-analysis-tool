@@ -815,7 +815,18 @@ class JsonAggregator {
                 average_p99_render_time_ms: this.summary.render_time_aggregated.total_count > 0
                     ? Math.round((this.summary.render_time_aggregated.p99_sum / this.summary.render_time_aggregated.total_count) * 100) / 100
                     : 0,
-                total_timeout_pages: this.summary.render_time_aggregated.timeout_count_total
+                average_slow_render_rate: (() => {
+                    const totalSlow = Object.values(this.summary.hourly_analysis).reduce((sum, slot) => sum + slot.slow_count, 0);
+                    return this.summary.total_render_records > 0
+                        ? Math.round((totalSlow / this.summary.total_render_records) * 10000) / 100
+                        : 0;
+                })(),
+                average_abnormal_render_rate: (() => {
+                    const totalAbnormal = Object.values(this.summary.hourly_analysis).reduce((sum, slot) => sum + slot.error_count, 0);
+                    return this.summary.total_render_records > 0
+                        ? Math.round((totalAbnormal / this.summary.total_render_records) * 10000) / 100
+                        : 0;
+                })()
             },
 
             // 頁面類型分析
@@ -888,9 +899,11 @@ class JsonAggregator {
                 total_requests: 0,
                 performance_summary: {
                     excellent: { threshold: "< 1000ms", count: 0, percentage: 0 },
-                    good: { threshold: "1000-3000ms", count: 0, percentage: 0 },
-                    acceptable: { threshold: "3000-5000ms", count: 0, percentage: 0 },
-                    poor: { threshold: "> 5000ms", count: 0, percentage: 0 }
+                    good: { threshold: "1000-2500ms", count: 0, percentage: 0 },
+                    acceptable: { threshold: "2500-5000ms", count: 0, percentage: 0 },
+                    slow_approaching: { threshold: "5000-8000ms", count: 0, percentage: 0 },
+                    slow: { threshold: "8000-20000ms", count: 0, percentage: 0 },
+                    abnormal: { threshold: "> 20000ms", count: 0, percentage: 0 }
                 },
                 detailed_breakdown: []
             };
@@ -917,9 +930,15 @@ class JsonAggregator {
         } else if (p95 < 5000) {
             performanceGrade = 'Acceptable';
             performanceColor = '🟠';
-        } else {
-            performanceGrade = 'Poor';
+        } else if (p95 < 8000) {
+            performanceGrade = 'Slow Approaching';
+            performanceColor = '🟧';
+        } else if (p95 < 20000) {
+            performanceGrade = 'Slow';
             performanceColor = '🔴';
+        } else {
+            performanceGrade = 'Abnormal';
+            performanceColor = '⛔';
         }
 
         // 計算各檔案的詳細分解
@@ -934,7 +953,9 @@ class JsonAggregator {
             max_ms: stat.max,
             performance_grade: stat.p95 < 1000 ? 'Excellent' :
                 stat.p95 < 2500 ? 'Good' :
-                    stat.p95 < 5000 ? 'Acceptable' : 'Poor'
+                stat.p95 < 5000 ? 'Acceptable' :
+                stat.p95 < 8000 ? 'Slow Approaching' :
+                stat.p95 < 20000 ? 'Slow' : 'Abnormal'
         }));
 
         return {
@@ -957,7 +978,9 @@ class JsonAggregator {
                 excellent: { threshold: "< 1000ms", description: "Excellent performance" },
                 good: { threshold: "1000-2500ms", description: "Good performance" },
                 acceptable: { threshold: "2500-5000ms", description: "Acceptable performance" },
-                poor: { threshold: "> 5000ms", description: "Poor performance, needs optimization" }
+                slow_approaching: { threshold: "5000-8000ms", description: "Approaching slow rendering threshold" },
+                slow: { threshold: "8000-20000ms", description: "Slow rendering, needs optimization" },
+                abnormal: { threshold: "> 20000ms", description: "Abnormal rendering, urgent attention required" }
             },
             detailed_breakdown: detailedBreakdown.sort((a, b) => b.requests - a.requests)
         };
@@ -1108,7 +1131,8 @@ class JsonAggregator {
 3. 平均 Render 時間:         ${stats.overview.average_render_time_ms} ms
 4. 平均 P95 Render 時間:     ${stats.overview.average_p95_render_time_ms} ms
 5. 平均 P99 Render 時間:     ${stats.overview.average_p99_render_time_ms} ms
-6. 總超時頁面數 (>45s):      ${stats.overview.total_timeout_pages.toLocaleString()} 筆
+6. 平均慢渲染率 (8-20s):     ${stats.overview.average_slow_render_rate}%
+7. 平均異常渲染率 (>20s):    ${stats.overview.average_abnormal_render_rate}%
 
 📄 頁面類型分析
 ========================================
@@ -1162,7 +1186,9 @@ ${prerenderStats.performance_grade.color} 整體性能評級: ${prerenderStats.p
 🟢 優秀 (< 1000ms):         ${prerenderStats.performance_summary.excellent.description}
 🟡 良好 (1000-2500ms):      ${prerenderStats.performance_summary.good.description}
 🟠 可接受 (2500-5000ms):    ${prerenderStats.performance_summary.acceptable.description}
-🔴 需優化 (> 5000ms):       ${prerenderStats.performance_summary.poor.description}
+🟧 偏慢 (5000-8000ms):      ${prerenderStats.performance_summary.slow_approaching.description}
+🔴 慢渲染 (8000-20000ms):   ${prerenderStats.performance_summary.slow.description}
+⛔ 異常渲染 (> 20000ms):    ${prerenderStats.performance_summary.abnormal.description}
 
 超時統計:
 • 超時請求數 (>10s):        ${prerenderStats.timeout_requests.toLocaleString()} 筆

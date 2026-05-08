@@ -10,7 +10,8 @@
     "analyze-daily": "bash daily-log-analysis-script.sh",
     "cli": "node analysis-cli.js",
     "guide": "node workflow-guide.js",
-    "start": "node analysis-cli.js"
+    "start": "node analysis-cli.js",
+    "datadog": "node datadog-export-analyzer.js --type all --date"
   },
   "keywords": [],
   "author": "",

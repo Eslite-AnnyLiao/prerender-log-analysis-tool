@@ -133,16 +133,23 @@ async function readCSV(filePath, type) {
             .pipe(parse({ columns: true, trim: true, bom: true }))
             .on('data', row => {
                 const ua = row['User agent'] || row['User Agent'] || row['user agent'] || '';
+                const reqId = extractReqId(row['Content'] || row['content']);
+                const productId = (row['@product_id'] || '').trim() || null;
+
+                // SSR: URL 從 reqId 組；SSG: URL 從 @product_id 組
+                let url = null;
+                if (type === 'ssr' && reqId) url = `/product/${reqId}`;
+                else if (type === 'ssg' && productId) url = `/product/${productId}`;
+
                 const rec = {
                     date: row['Date'] || row['date'] || '',
                     durationMs: parseDurationMs(row['Duration'] || row['duration']),
                     userAgent: ua,
                     content: row['Content'] || row['content'] || '',
-                    reqId: extractReqId(row['Content'] || row['content'])
+                    reqId,
+                    url
                 };
-                if (type === 'ssr') {
-                    rec.productId = (row['@product_id'] || '').trim() || null;
-                }
+                if (type === 'ssr') rec.productId = productId;
                 records.push(rec);
             })
             .on('end', () => resolve(records))
@@ -164,6 +171,7 @@ function buildAggregates(records, type) {
     const renderItems = [];
     const slowItems = [];
     const productIdCount = {};
+    const urlCount = {};
 
     // SSG 模式下統計時排除特定 UA
     const shouldExclude = (ua) => type === 'ssg' && SSG_EXCLUDE_UA.includes(ua);
@@ -199,10 +207,12 @@ function buildAggregates(records, type) {
             uaSecondly[sec][ua] = (uaSecondly[sec][ua] || 0) + 1;
         }
 
+        if (r.url) urlCount[r.url] = (urlCount[r.url] || 0) + 1;
+
         if (r.durationMs != null) {
-            renderItems.push({ ms: r.durationMs, ua, date: r.date, reqId: r.reqId });
+            renderItems.push({ ms: r.durationMs, ua, date: r.date, url: r.url });
             if (r.durationMs >= 3000) {
-                slowItems.push({ ms: r.durationMs, ua, date: r.date, hm });
+                slowItems.push({ ms: r.durationMs, ua, date: r.date, hm, url: r.url });
             }
         }
 
@@ -211,7 +221,7 @@ function buildAggregates(records, type) {
         }
     }
 
-    return { minuteCount, hourCount, uaCount, uaHourly, uaMinutely, uaSecondly, renderItems, slowItems, productIdCount };
+    return { minuteCount, hourCount, uaCount, uaHourly, uaMinutely, uaSecondly, renderItems, slowItems, productIdCount, urlCount };
 }
 
 function calcRenderStats(renderItems) {
@@ -357,6 +367,21 @@ function calcUAStats(uaCount, uaHourly, renderItems) {
     };
 }
 
+function calcUrlStats(urlCount, renderItems) {
+    const total = Object.values(urlCount).reduce((s, v) => s + v, 0);
+    const unique = Object.keys(urlCount).length;
+    const top10 = Object.entries(urlCount)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(([url, count]) => ({ url, count, pct: Math.round(count / total * 10000) / 100 }));
+    // 最慢前 15 名（含 URL）
+    const top15slow = [...renderItems]
+        .sort((a, b) => b.ms - a.ms)
+        .slice(0, 15)
+        .map(r => ({ ms: r.ms, url: r.url || '(無URL)', ua: r.ua, tw: toTW(r.date) }));
+    return { total, unique, top10, top15slow };
+}
+
 function calcSlowHM(slowItems) {
     const hmCount = {};
     slowItems.forEach(({ hm }) => { if (hm) hmCount[hm] = (hmCount[hm] || 0) + 1; });
@@ -477,6 +502,25 @@ function appendCommonSections(lines, records, agg, computed, type) {
     lines.push('');
 }
 
+function appendUrlSection(lines, urlStats, type) {
+    lines.push('URL 分析結果:');
+    lines.push('='.repeat(48));
+    lines.push('URL 總體統計:');
+    lines.push(`• 總訪問次數: ${urlStats.total}`);
+    lines.push(`• 不同 URL 數量: ${urlStats.unique}`);
+    lines.push('');
+    lines.push('重複次數最多的 URL (前10名):');
+    if (urlStats.top10.length) {
+        urlStats.top10.forEach((item, i) => {
+            lines.push(`${i + 1}. ${item.url}`);
+            lines.push(`   • 訪問次數: ${item.count} 次 (${item.pct}%)`);
+        });
+    } else {
+        lines.push('• 無 URL 資料');
+    }
+    lines.push('');
+}
+
 function generateSSGReport(filePath, records, agg, computed) {
     const excludedCount = records.filter(r => SSG_EXCLUDE_UA.includes(r.userAgent)).length;
     const lines = [];
@@ -495,12 +539,13 @@ function generateSSGReport(filePath, records, agg, computed) {
     lines.push(`• 實際分析筆數: ${records.length - excludedCount} 筆`);
     lines.push('');
     appendCommonSections(lines, records, agg, computed, 'ssg');
+    appendUrlSection(lines, computed.urlStats, 'ssg');
     return lines.join('\n');
 }
 
 function generateSSRReport(filePath, records, agg, computed) {
     const { renderItems, slowItems, productIdCount } = agg;
-    const { renderStats, slowHM } = computed;
+    const { renderStats, slowHM, urlStats } = computed;
     const lines = [];
     lines.push('Datadog Log 分析報告 (SSR 模式)');
     lines.push(`生成時間: ${nowTW()}`);
@@ -558,19 +603,22 @@ function generateSSRReport(filePath, records, agg, computed) {
     slowHM.all.forEach(item => lines.push(`${item.time}: ${item.count} 次`));
     lines.push('');
 
-    lines.push('Render 時間前 15 名 (最慢的請求，包含 User-Agent):');
-    [...renderItems].sort((a, b) => b.ms - a.ms).slice(0, 15).forEach((item, i) => {
-        const tw = toTW(item.date);
-        lines.push(`${i + 1}. ${item.ms} ms | ${item.ua} | ${tw || item.date}`);
+    lines.push('Render 時間前 15 名 (最慢的請求，包含 URL):');
+    urlStats.top15slow.forEach((item, i) => {
+        lines.push(`${i + 1}. ${item.ms} ms | ${item.url}`);
+        lines.push(`   • User-Agent: ${item.ua}`);
+        lines.push(`   • 時間: ${item.tw || '(無時間)'}`);
     });
     lines.push('');
 
     lines.push('大於 3000ms 的時段 (台灣時區，按時間排序，前10筆):');
     [...slowItems].sort((a, b) => new Date(a.date) - new Date(b.date)).slice(0, 10).forEach((item, i) => {
         const tw = toTW(item.date);
-        lines.push(`${i + 1}. ${tw || item.date} | ${item.ms} ms | ${item.ua}`);
+        lines.push(`${i + 1}. ${tw || item.date} | ${item.ms} ms | ${item.url || '(無URL)'} | ${item.ua}`);
     });
     lines.push('');
+
+    appendUrlSection(lines, urlStats, 'ssr');
 
     const pidEntries = Object.entries(productIdCount).sort((a, b) => b[1] - a[1]);
     if (pidEntries.length) {
@@ -797,11 +845,29 @@ function findInputByDate(type, dateDigits) {
 async function main() {
     const { type, input: inputArg, date, output } = parseArgs(process.argv);
 
-    if (!type || !['ssg', 'ssr', 'combined'].includes(type)) {
-        console.error('錯誤: 請指定 --type ssg / ssr / combined');
-        console.log('用法: node datadog-export-analyzer.js --type <ssg|ssr|combined> --date <YYYYMMDD>');
+    if (!type || !['ssg', 'ssr', 'combined', 'all'].includes(type)) {
+        console.error('錯誤: 請指定 --type ssg / ssr / combined / all');
+        console.log('用法: node datadog-export-analyzer.js --type all --date <YYYYMMDD>');
+        console.log('      node datadog-export-analyzer.js --type <ssg|ssr|combined> --date <YYYYMMDD>');
         console.log('      node datadog-export-analyzer.js --type <ssg|ssr> --input <csv_file>');
         process.exit(1);
+    }
+
+    // ── All 模式：依序跑 ssg → ssr → combined ─────────────
+    if (type === 'all') {
+        if (!date) {
+            console.error('錯誤: all 模式需要指定 --date <YYYYMMDD>');
+            process.exit(1);
+        }
+        const { execSync } = require('child_process');
+        const script = process.argv[1];
+        const dateArg = `--date ${date}`;
+        const outArg = output ? `--output ${output}` : '';
+        for (const t of ['ssg', 'ssr', 'combined']) {
+            console.log(`\n${'='.repeat(48)}\n▶ 執行 --type ${t}\n${'='.repeat(48)}`);
+            execSync(`node "${script}" --type ${t} ${dateArg} ${outArg}`, { stdio: 'inherit' });
+        }
+        return;
     }
 
     // ── Combined 模式 ──────────────────────────────────────
@@ -903,7 +969,8 @@ async function main() {
         peakUA: calcPeakMinuteUA(agg.minuteCount, records, type),
         slowHM: calcSlowHM(agg.slowItems),
         hf: calcHighFreq(agg.uaMinutely, agg.uaSecondly),
-        uaStats: calcUAStats(agg.uaCount, agg.uaHourly, agg.renderItems)
+        uaStats: calcUAStats(agg.uaCount, agg.uaHourly, agg.renderItems),
+        urlStats: calcUrlStats(agg.urlCount, agg.renderItems)
     };
 
     const report = type === 'ssg'
@@ -932,9 +999,8 @@ async function main() {
         highFrequency: computed.hf,
         userAgentStats: computed.uaStats,
         hourCount: agg.hourCount,
-        top15SlowRenders: type === 'ssr'
-            ? [...agg.renderItems].sort((a, b) => b.ms - a.ms).slice(0, 15).map(r => ({ ms: r.ms, ua: r.ua, tw: toTW(r.date) }))
-            : undefined,
+        urlStats: computed.urlStats,
+        top15SlowRenders: type === 'ssr' ? computed.urlStats.top15slow : undefined,
         productIdStats: type === 'ssr'
             ? Object.entries(agg.productIdCount).sort((a, b) => b[1] - a[1]).slice(0, 50).map(([id, count]) => ({ id, count }))
             : undefined

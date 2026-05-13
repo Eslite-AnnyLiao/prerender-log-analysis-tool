@@ -133,6 +133,8 @@ async function readCSV(filePath, type) {
             .pipe(parse({ columns: true, trim: true, bom: true }))
             .on('data', row => {
                 const ua = row['User agent'] || row['User Agent'] || row['user agent'] || '';
+                if (type === 'ssg' && SSG_EXCLUDE_UA.includes(ua)) return;
+
                 const reqId = extractReqId(row['Content'] || row['content']);
                 const productId = (row['@product_id'] || '').trim() || null;
 
@@ -173,19 +175,12 @@ function buildAggregates(records, type) {
     const productIdCount = {};
     const urlCount = {};
 
-    // SSG 模式下統計時排除特定 UA
-    const shouldExclude = (ua) => type === 'ssg' && SSG_EXCLUDE_UA.includes(ua);
-
     for (const r of records) {
         if (!r.date) continue;
         const ua = r.userAgent || 'Unknown';
 
-        // 全部記錄計入小時（用於總筆數統計）
         const hr = hourLabel(r.date);
         if (hr) hourCount[hr] = (hourCount[hr] || 0) + 1;
-
-        // 以下統計排除指定 UA
-        if (shouldExclude(ua)) continue;
 
         const min = minuteLabel(r.date);
         const sec = secondLabel(r.date);
@@ -522,7 +517,6 @@ function appendUrlSection(lines, urlStats, type) {
 }
 
 function generateSSGReport(filePath, records, agg, computed) {
-    const excludedCount = records.filter(r => SSG_EXCLUDE_UA.includes(r.userAgent)).length;
     const lines = [];
     lines.push('Datadog Log 分析報告 (SSG 模式)');
     lines.push(`生成時間: ${nowTW()}`);
@@ -535,8 +529,6 @@ function generateSSGReport(filePath, records, agg, computed) {
     lines.push('資料來源統計:');
     lines.push('• 分析模式: Datadog Export SSG 單檔案模式');
     lines.push(`• 總記錄筆數: ${records.length} 筆`);
-    lines.push(`• 排除 EsliteDeployValidator 筆數: ${excludedCount} 筆`);
-    lines.push(`• 實際分析筆數: ${records.length - excludedCount} 筆`);
     lines.push('');
     appendCommonSections(lines, records, agg, computed, 'ssg');
     appendUrlSection(lines, computed.urlStats, 'ssg');
@@ -695,14 +687,13 @@ function calcCombinedUAStats(uaCount) {
     return { total, unique: ranking.length, ranking: ranking.slice(0, 20) };
 }
 
-function generateCombinedReport(dateDigits, ssgFile, ssrFile, rawSsgCount, ssgRecords, ssrRecords, agg) {
+function generateCombinedReport(dateDigits, ssgFile, ssrFile, ssgRecords, ssrRecords, agg) {
     const { minuteCount, hourCount, uaCount, uaMinutely, uaSecondly } = agg;
     const minStats = calcMinuteStats(minuteCount);
     const peakUA = calcPeakMinuteUA(minuteCount, [...ssgRecords, ...ssrRecords], 'combined');
     const hf = calcHighFreq(uaMinutely, uaSecondly);
     const uaStats = calcCombinedUAStats(uaCount);
 
-    const ssgExcluded = rawSsgCount - ssgRecords.length;
     const dateDash = `${dateDigits.slice(0,4)}-${dateDigits.slice(4,6)}-${dateDigits.slice(6,8)}`;
 
     const lines = [];
@@ -713,13 +704,16 @@ function generateCombinedReport(dateDigits, ssgFile, ssrFile, rawSsgCount, ssgRe
     lines.push('');
     lines.push('檔案資訊:');
     lines.push(`• 日期: ${dateDash}`);
-    lines.push(`• SSG 檔案: ${ssgFile}`);
-    lines.push(`• SSR 檔案: ${ssrFile}`);
+    lines.push(`• SSG 檔案: ${ssgFile || '（無資料）'}`);
+    lines.push(`• SSR 檔案: ${ssrFile || '（無資料）'}`);
     lines.push('');
     lines.push('資料來源統計:');
-    lines.push('• 分析模式: Combined（SSG + SSR 合併）');
-    lines.push(`• SSG 原始記錄: ${rawSsgCount} 筆（排除 EsliteDeployValidator: ${ssgExcluded} 筆）`);
-    lines.push(`• SSR 記錄: ${ssrRecords.length} 筆`);
+    const modeLabel = ssgFile && ssrFile ? 'Combined（SSG + SSR 合併）'
+        : ssgFile ? 'Combined（僅 SSG，SSR 尚無資料）'
+        : 'Combined（僅 SSR，SSG 尚無資料）';
+    lines.push(`• 分析模式: ${modeLabel}`);
+    lines.push(`• SSG 記錄: ${ssgFile ? ssgRecords.length + ' 筆' : '0 筆（檔案不存在）'}`);
+    lines.push(`• SSR 記錄: ${ssrFile ? ssrRecords.length + ' 筆' : '0 筆（檔案不存在）'}`);
     lines.push(`• 合併分析總筆數: ${uaStats.total} 筆`);
     lines.push('');
 
@@ -815,6 +809,139 @@ function generateCombinedReport(dateDigits, ssgFile, ssrFile, rawSsgCount, ssgRe
 // Main
 // ============================
 
+function buildJsonOutput(type, inputFile, records, agg, computed) {
+    const { renderStats, minStats, peakUA, slowHM, hf, uaStats, urlStats } = computed;
+    const { minuteCount, hourCount, slowItems } = agg;
+
+    const avgPerHour = Object.keys(hourCount).length
+        ? Math.round(Object.values(hourCount).reduce((s, v) => s + v, 0) / Object.keys(hourCount).length * 100) / 100
+        : 0;
+
+    return {
+        analysis_time: new Date().toISOString(),
+        timezone_info: '所有時間已轉換為台灣時區 (UTC+8)',
+        analysis_mode: type === 'ssr' ? 'Datadog Export SSR 單檔案模式' : 'Datadog Export SSG 單檔案模式',
+
+        file_info: { input_file: inputFile },
+
+        data_source_stats: {
+            total_records: records.length,
+            valid_duration_records: agg.renderItems.length
+        },
+
+        render_time_stats: renderStats ? {
+            average_ms: renderStats.avg,
+            min_ms: renderStats.min,
+            max_ms: renderStats.max,
+            median_p50_ms: renderStats.p50,
+            p90_ms: renderStats.p90,
+            p95_ms: renderStats.p95,
+            p98_ms: renderStats.p98,
+            p99_ms: renderStats.p99,
+            count_above_3000to5000ms: renderStats.slow3to5,
+            count_above_5000ms: renderStats.slowOver5,
+            total_records: renderStats.count
+        } : null,
+
+        avg_requests_per_hour: avgPerHour,
+
+        per_minute_stats: {
+            max_value: minStats.max,
+            min_value: minStats.min,
+            average_value: minStats.avg,
+            total_minutes: minStats.total,
+            top_15: minStats.sorted.slice(0, 15).map(([minute, count]) => ({ minute, count }))
+        },
+
+        peak_minute_user_agent_analysis: peakUA ? {
+            peak_minute: peakUA.peakMin,
+            peak_request_count: peakUA.peakCount,
+            total_peak_minutes: peakUA.tiedCount,
+            total_user_agents: peakUA.uniqueUA,
+            user_agent_distribution: peakUA.uaRanking.map(r => ({
+                userAgent: r.ua, count: r.count, percentage: r.pct, browser: r.browser, os: r.os
+            })),
+            browser_distribution: peakUA.browserDist.map(r => ({
+                browser: r.browser, count: r.count, percentage: r.pct
+            })),
+            os_distribution: peakUA.osDist.map(r => ({
+                os: r.os, count: r.count, percentage: r.pct
+            }))
+        } : null,
+
+        high_frequency_analysis: {
+            minute_top10: hf.minuteTop10.map(r => ({ user_agent: r.ua, total: r.total, max_per_minute: r.maxCount })),
+            second_top10: hf.secondTop10.map(r => ({ user_agent: r.ua, total: r.total, max_per_second: r.maxCount })),
+            total_minute_violations: hf.totalMinVio,
+            total_second_violations: hf.totalSecVio,
+            unique_violating_user_agents: hf.uniqueViolatingUA
+        },
+
+        slow_render_hour_minute_stats: type === 'ssr' ? {
+            summary: {
+                total_unique_hour_minutes: slowHM.all.length,
+                total_records: slowHM.total,
+                most_frequent_times: slowHM.mostFrequent,
+                max_frequency: slowHM.mostFrequent.length ? slowHM.mostFrequent[0].count : 0,
+                duplicate_count: slowHM.duplicates.length
+            },
+            all_hour_minute_stats: slowHM.all,
+            duplicate_hour_minute_stats: slowHM.duplicates
+        } : undefined,
+
+        url_analysis: {
+            overall_stats: { total_visits: urlStats.total, unique_urls: urlStats.unique },
+            duplicate_url_details_top_10: urlStats.top10.map(r => ({
+                url: r.url, count: r.count, percentage: r.pct
+            })),
+            top_15_render_times: urlStats.top15slow.map(r => ({
+                renderTime: r.ms, url: r.url, timestamp: r.tw, userAgent: r.ua
+            }))
+        },
+
+        user_agent_analysis: {
+            overall_stats: {
+                total_requests: uaStats.total,
+                unique_user_agents: uaStats.unique
+            },
+            user_agent_ranking: uaStats.ranking.map(r => ({
+                userAgent: r.ua, count: r.count, browser: r.browser, os: r.os,
+                percentage: r.pct, avgRenderTime: r.avgMs
+            })),
+            browser_stats: uaStats.browsers.map(r => ({
+                browser: r.browser, count: r.count, percentage: r.pct
+            })),
+            os_stats: uaStats.oses.map(r => ({
+                os: r.os, count: r.count, percentage: r.pct
+            })),
+            hourly_top_user_agents: uaStats.hourlyTop
+        },
+
+        hourly_request_data: hourCount,
+
+        minutely_request_data: minuteCount,
+
+        slow_render_periods: type === 'ssr'
+            ? slowItems.map(r => ({
+                timestamp_taiwan: toTW(r.date),
+                render_time_ms: r.ms,
+                url: r.url || null,
+                user_agent: r.ua
+            }))
+            : undefined,
+
+        chart_data: Object.entries(hourCount)
+            .sort((a, b) => a[0].localeCompare(b[0]))
+            .map(([hour, count]) => ({ hour, count })),
+
+        ...(type === 'ssr' ? {
+            product_id_stats: Object.entries(agg.productIdCount)
+                .sort((a, b) => b[1] - a[1]).slice(0, 50)
+                .map(([id, count]) => ({ id, count }))
+        } : {})
+    };
+}
+
 function parseArgs(argv) {
     const args = { type: null, input: null, date: null, output: null };
     for (let i = 2; i < argv.length; i++) {
@@ -833,11 +960,15 @@ function normalizeDate(dateStr) {
 }
 
 // 依固定命名規則 {type}-product-log-YYYYMMDD.csv 組出路徑
-function findInputByDate(type, dateDigits) {
+// strict=true 時找不到直接 exit，strict=false 時回傳 null
+function findInputByDate(type, dateDigits, strict = true) {
     const filePath = `./to-analyze-daily-data/${type}/${type}-product-log-${dateDigits}.csv`;
     if (!fs.existsSync(filePath)) {
-        console.error(`錯誤: 找不到檔案 "${filePath}"`);
-        process.exit(1);
+        if (strict) {
+            console.error(`錯誤: 找不到檔案 "${filePath}"`);
+            process.exit(1);
+        }
+        return null;
     }
     return filePath;
 }
@@ -861,11 +992,20 @@ async function main() {
         }
         const { execSync } = require('child_process');
         const script = process.argv[1];
-        const dateArg = `--date ${date}`;
+        const dateDigitsAll = normalizeDate(date);
         const outArg = output ? `--output ${output}` : '';
-        for (const t of ['ssg', 'ssr', 'combined']) {
+        const hasSsg = dateDigitsAll && !!findInputByDate('ssg', dateDigitsAll, false);
+        const hasSsr = dateDigitsAll && !!findInputByDate('ssr', dateDigitsAll, false);
+        const types = [];
+        if (hasSsg) types.push('ssg');
+        if (hasSsr) types.push('ssr');
+        if (hasSsg || hasSsr) types.push('combined');
+        if (!hasSsg) console.log('⚠️  SSG 檔案不存在，跳過 ssg');
+        if (!hasSsr) console.log('⚠️  SSR 檔案不存在，跳過 ssr');
+        if (!hasSsg && !hasSsr) { console.error('錯誤: SSG 與 SSR 檔案均不存在，無法執行分析'); process.exit(1); }
+        for (const t of types) {
             console.log(`\n${'='.repeat(48)}\n▶ 執行 --type ${t}\n${'='.repeat(48)}`);
-            execSync(`node "${script}" --type ${t} ${dateArg} ${outArg}`, { stdio: 'inherit' });
+            execSync(`node "${script}" --type ${t} --date ${date} ${outArg}`, { stdio: 'inherit' });
         }
         return;
     }
@@ -881,27 +1021,34 @@ async function main() {
             console.error(`錯誤: 無效的日期格式 "${date}"`);
             process.exit(1);
         }
-        const ssgFile = findInputByDate('ssg', dateDigits);
-        const ssrFile = findInputByDate('ssr', dateDigits);
+        const ssgFile = findInputByDate('ssg', dateDigits, false);
+        const ssrFile = findInputByDate('ssr', dateDigits, false);
+
+        if (!ssgFile && !ssrFile) {
+            console.error('錯誤: SSG 與 SSR 檔案均不存在，無法執行 combined 分析');
+            process.exit(1);
+        }
 
         console.log(`\n分析模式: COMBINED`);
-        console.log(`SSG 檔案: ${ssgFile}`);
-        console.log(`SSR 檔案: ${ssrFile}`);
+        if (ssgFile) console.log(`SSG 檔案: ${ssgFile}`);
+        else console.log('⚠️  SSG 檔案不存在');
+        if (ssrFile) console.log(`SSR 檔案: ${ssrFile}`);
+        else console.log('⚠️  SSR 檔案不存在');
 
         const [rawSsg, rawSsr] = await Promise.all([
-            readCSV(ssgFile, 'ssg'),
-            readCSV(ssrFile, 'ssr')
+            ssgFile ? readCSV(ssgFile, 'ssg') : Promise.resolve([]),
+            ssrFile ? readCSV(ssrFile, 'ssr') : Promise.resolve([])
         ]);
 
-        // SSG 排除指定 UA
-        const ssgRecords = rawSsg.filter(r => !SSG_EXCLUDE_UA.includes(r.userAgent));
+        // readCSV 已在來源過濾 EsliteDeployValidator
+        const ssgRecords = rawSsg;
         const ssrRecords = rawSsr;
 
-        console.log(`SSG: ${rawSsg.length} 筆（排除後 ${ssgRecords.length} 筆）`);
-        console.log(`SSR: ${ssrRecords.length} 筆`);
+        if (ssgFile) console.log(`SSG: ${ssgRecords.length} 筆`);
+        if (ssrFile) console.log(`SSR: ${ssrRecords.length} 筆`);
 
         const combinedAgg = mergeCombinedAggregates(ssgRecords, ssrRecords);
-        const report = generateCombinedReport(dateDigits, ssgFile, ssrFile, rawSsg.length, ssgRecords, ssrRecords, combinedAgg);
+        const report = generateCombinedReport(dateDigits, ssgFile, ssrFile, ssgRecords, ssrRecords, combinedAgg);
 
         const outDir = output || `./daily-analysis-result/datadog-export/combined`;
         if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
@@ -911,19 +1058,79 @@ async function main() {
 
         fs.writeFileSync(txtPath, report, 'utf8');
 
+        const minStats = calcMinuteStats(combinedAgg.minuteCount);
+        const peakUA = calcPeakMinuteUA(combinedAgg.minuteCount, [...ssgRecords, ...ssrRecords], 'combined');
+        const hf = calcHighFreq(combinedAgg.uaMinutely, combinedAgg.uaSecondly);
+        const uaStats = calcCombinedUAStats(combinedAgg.uaCount);
+        const combinedTotal = Object.values(combinedAgg.uaCount.total).reduce((s, v) => s + v, 0);
+        const avgPerHour = Object.keys(combinedAgg.hourCount.total).length
+            ? Math.round(Object.values(combinedAgg.hourCount.total).reduce((s, v) => s + v, 0) / Object.keys(combinedAgg.hourCount.total).length * 100) / 100
+            : 0;
+
         const jsonOut = {
-            generatedAt: new Date().toISOString(),
-            type: 'combined',
-            date: dateDigits,
-            ssgFile,
-            ssrFile,
-            ssgRecords: rawSsg.length,
-            ssrRecords: ssrRecords.length,
-            combinedTotal: Object.values(combinedAgg.uaCount.total).reduce((s, v) => s + v, 0),
-            hourCount: combinedAgg.hourCount,
-            minuteStats: calcMinuteStats(combinedAgg.minuteCount),
-            highFrequency: calcHighFreq(combinedAgg.uaMinutely, combinedAgg.uaSecondly),
-            uaStats: calcCombinedUAStats(combinedAgg.uaCount)
+            analysis_time: new Date().toISOString(),
+            timezone_info: '所有時間已轉換為台灣時區 (UTC+8)',
+            analysis_mode: ssgFile && ssrFile ? 'Combined（SSG + SSR 合併）'
+                : ssgFile ? 'Combined（僅 SSG，SSR 尚無資料）'
+                : 'Combined（僅 SSR，SSG 尚無資料）',
+
+            file_info: {
+                ssg_file: ssgFile || null,
+                ssr_file: ssrFile
+            },
+
+            data_source_stats: {
+                ssg_records: ssgRecords.length,
+                ssr_records: ssrRecords.length,
+                total_records: combinedTotal
+            },
+
+            avg_requests_per_hour: avgPerHour,
+
+            per_minute_stats: {
+                max_value: minStats.max,
+                min_value: minStats.min,
+                average_value: minStats.avg,
+                total_minutes: minStats.total,
+                top_15: minStats.sorted.slice(0, 15).map(([minute, count]) => ({ minute, count }))
+            },
+
+            peak_minute_user_agent_analysis: peakUA ? {
+                peak_minute: peakUA.peakMin,
+                peak_request_count: peakUA.peakCount,
+                total_peak_minutes: peakUA.tiedCount,
+                total_user_agents: peakUA.uniqueUA,
+                user_agent_distribution: peakUA.uaRanking.map(r => ({
+                    userAgent: r.ua, count: r.count, percentage: r.pct, browser: r.browser, os: r.os
+                }))
+            } : null,
+
+            high_frequency_analysis: {
+                minute_top10: hf.minuteTop10.map(r => ({ user_agent: r.ua, total: r.total, max_per_minute: r.maxCount })),
+                second_top10: hf.secondTop10.map(r => ({ user_agent: r.ua, total: r.total, max_per_second: r.maxCount })),
+                total_minute_violations: hf.totalMinVio,
+                total_second_violations: hf.totalSecVio,
+                unique_violating_user_agents: hf.uniqueViolatingUA
+            },
+
+            user_agent_analysis: {
+                overall_stats: { total_requests: uaStats.total, unique_user_agents: uaStats.unique },
+                user_agent_ranking: uaStats.ranking.map(r => ({
+                    userAgent: r.ua, total: r.total, ssg: r.ssg, ssr: r.ssr, percentage: r.pct, browser: r.browser, os: r.os
+                }))
+            },
+
+            hourly_request_data: combinedAgg.hourCount.total,
+            hourly_request_data_by_type: {
+                ssg: combinedAgg.hourCount.ssg,
+                ssr: combinedAgg.hourCount.ssr
+            },
+
+            minutely_request_data: combinedAgg.minuteCount,
+
+            chart_data: Object.entries(combinedAgg.hourCount.total)
+                .sort((a, b) => a[0].localeCompare(b[0]))
+                .map(([hour, count]) => ({ hour, count }))
         };
         fs.writeFileSync(jsonPath, JSON.stringify(jsonOut, null, 2), 'utf8');
 
@@ -986,25 +1193,7 @@ async function main() {
 
     fs.writeFileSync(txtPath, report, 'utf8');
 
-    const jsonOut = {
-        generatedAt: new Date().toISOString(),
-        type,
-        inputFile: input,
-        totalRecords: records.length,
-        excludedUA: type === 'ssg' ? SSG_EXCLUDE_UA : undefined,
-        renderStats: computed.renderStats,
-        minuteStats: computed.minStats,
-        peakMinuteUA: computed.peakUA,
-        slowHourMinute: type === 'ssr' ? computed.slowHM : undefined,
-        highFrequency: computed.hf,
-        userAgentStats: computed.uaStats,
-        hourCount: agg.hourCount,
-        urlStats: computed.urlStats,
-        top15SlowRenders: type === 'ssr' ? computed.urlStats.top15slow : undefined,
-        productIdStats: type === 'ssr'
-            ? Object.entries(agg.productIdCount).sort((a, b) => b[1] - a[1]).slice(0, 50).map(([id, count]) => ({ id, count }))
-            : undefined
-    };
+    const jsonOut = buildJsonOutput(type, input, records, agg, computed);
     fs.writeFileSync(jsonPath, JSON.stringify(jsonOut, null, 2), 'utf8');
 
     console.log(`\n分析完成！`);

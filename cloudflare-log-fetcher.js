@@ -5,12 +5,10 @@
 // 用法:
 //   node cloudflare-log-fetcher.js --date <YYYYMMDD>
 //   node cloudflare-log-fetcher.js --date <YYYY-MM-DD> --worker <workerName> --output <dir>
-//   node cloudflare-log-fetcher.js --probe             # 列出欄位名稱，確認 schema
 //
 // 說明:
 //   accountId / apiToken / workerName 固定設定於檔案頂部常數
-//   --probe   呼叫 keys endpoint 列出所有欄位名稱，不儲存檔案
-//   --date    查詢日期（台灣時區），格式 YYYYMMDD 或 YYYY-MM-DD（必填，probe 模式除外）
+//   --date    查詢日期（台灣時區），格式 YYYYMMDD 或 YYYY-MM-DD（必填）
 //   --worker  Worker script 名稱，用於過濾 scriptName（選填，傳入時覆蓋頂部常數）
 //   --output  輸出目錄（預設: ./daily-analysis-result/cloudflare/YYYYMMDD）
 //   --account-id / --api-token  選填，傳入時覆蓋頂部常數
@@ -48,8 +46,6 @@ function parseArgs(argv) {
     worker: CLOUDFLARE_WORKER_NAME,
     date: null,
     output: null,
-    probe: false,
-    raw: false,
     debug: false,
   };
   for (let i = 2; i < argv.length; i++) {
@@ -58,8 +54,6 @@ function parseArgs(argv) {
     else if (argv[i] === '--worker' && argv[i + 1]) args.worker = argv[++i];
     else if (argv[i] === '--date' && argv[i + 1]) args.date = argv[++i];
     else if (argv[i] === '--output' && argv[i + 1]) args.output = argv[++i];
-    else if (argv[i] === '--probe') args.probe = true;
-    else if (argv[i] === '--raw') args.raw = true;
     else if (argv[i] === '--debug') args.debug = true;
   }
   return args;
@@ -264,51 +258,24 @@ async function callObservabilityAPI(accountId, apiToken, subpath, body, retries 
 // 分頁取得所有 Log
 // ============================
 
-function buildFilters(worker) {
+function buildCacheHitFilters(worker) {
   const filters = [{ kind: 'filter', key: 'message', operation: 'regex', type: 'string', value: '^Astro cache hit for' }];
-  if (worker) {
-    filters.push({
-      kind: 'filter',
-      key: '$metadata.service',
-      operation: 'eq',
-      type: 'string',
-      value: worker,
-    });
-  }
+  if (worker) filters.push({ kind: 'filter', key: '$metadata.service', operation: 'eq', type: 'string', value: worker });
   return filters;
 }
 
 const twHHMM = ms => new Date(ms + 8 * 3600_000).toISOString().slice(11, 16);
 
-async function fetchHourCount(accountId, apiToken, worker, fromMs, toMs, hourLabel) {
-  const filters = buildFilters(worker);
+async function fetchCalcCount(accountId, apiToken, filters, fromMs, toMs) {
   const body = {
     queryId: 'adhoc-query',
     timeframe: { from: fromMs, to: toMs },
     view: 'calculations',
-    parameters: {
-      filters,
-      filterCombination: 'and',
-      calculations: [{ operator: 'count' }],
-    },
+    parameters: { filters, filterCombination: 'and', calculations: [{ operator: 'count' }] },
   };
-
-  process.stdout.write(`  ${hourLabel}... `);
-  const t0 = Date.now();
   const result = await callObservabilityAPI(accountId, apiToken, 'query', body);
-  const elapsed = Date.now() - t0;
-
   const calcs = result.result?.calculations || [];
-  const abrLevel = result.result?.run?.statistics?.abr_level ?? '?';
-
-  if (DEBUG && calcs.length) {
-    console.log(`\n  [DEBUG] calculations: ${JSON.stringify(calcs)}`);
-  }
-
-  const count = Number(calcs[0]?.aggregates?.[0]?.value) || 0;
-  console.log(`${count} 次（${elapsed}ms，abr=${abrLevel}）`);
-
-  return { hourLabel, count };
+  return Number(calcs[0]?.aggregates?.[0]?.value) || 0;
 }
 
 async function fetchAllLogs(accountId, apiToken, dateDigits, worker) {
@@ -318,8 +285,8 @@ async function fetchAllLogs(accountId, apiToken, dateDigits, worker) {
 
   console.log(`查詢時間範圍 (UTC): ${startDisplay} ~ ${endDisplay}`);
   console.log(`Worker: ${worker || '（不限）'}`);
-  console.log(`查詢條件: message regex 'Astro\\scache\\shit\\sfor'`);
-  console.log(`策略: 每小時 calculations 分批查詢（降低 ABR 取樣等級）`);
+  console.log(`Cache hit 條件: message regex '^Astro cache hit for'`);
+  console.log(`策略: 每小時分批查詢`);
   console.log('');
 
   let slotStart = fromMs;
@@ -327,43 +294,49 @@ async function fetchAllLogs(accountId, apiToken, dateDigits, worker) {
   while (slotStart < toMs) {
     const slotEnd = Math.min(slotStart + HOUR_MS - 1, toMs);
     const label = `${twHHMM(slotStart)}~${twHHMM(slotEnd)} (TW)`;
+    process.stdout.write(`  ${label} `);
 
-    const { count } = await fetchHourCount(accountId, apiToken, worker, slotStart, slotEnd, label);
-    if (count > 0) hourlyResults.push({ hour: twHHMM(slotStart), count });
+    const hitCount = await fetchCalcCount(accountId, apiToken, buildCacheHitFilters(worker), slotStart, slotEnd);
+
+    console.log(`hit=${hitCount}`);
+
+    if (hitCount > 0) {
+      hourlyResults.push({ hour: twHHMM(slotStart), hitCount });
+    }
 
     slotStart += HOUR_MS;
-
     if (slotStart < toMs) await sleep(10_000);
   }
 
-  const total = hourlyResults.reduce((s, r) => s + r.count, 0);
-  console.log(`\nAstro cache hit 全天總計: ${total} 次\n`);
-  return { total, hourly: hourlyResults };
+  const totalHits = hourlyResults.reduce((s, r) => s + r.hitCount, 0);
+  console.log(`\nAstro cache hit: ${totalHits} 次\n`);
+  return { totalHits, hourly: hourlyResults };
 }
 
 // ============================
 // 輸出報告
 // ============================
 
-function buildReport(dateDigits, worker, total, hourly) {
+function buildReport(dateDigits, worker, totalHits, hourly) {
   const dateDash = `${dateDigits.slice(0, 4)}-${dateDigits.slice(4, 6)}-${dateDigits.slice(6, 8)}`;
   const lines = [
     'Cloudflare Workers Observability - Astro Cache Hit 統計',
     `生成時間: ${nowTW()}`,
     `日期 (台灣時區): ${dateDash} 00:00:00 ~ 23:59:59`,
     `Worker: ${worker || '（不限）'}`,
-    `查詢條件: message regex 'Astro cache hit for'`,
-    `全天總計: ${total} 次`,
+    `全天 Cache hit: ${totalHits} 次`,
     '='.repeat(64),
     '',
     '每小時明細 (台灣時區，只顯示有資料的小時):',
+    `${'時段'.padEnd(14)}${'hit'.padStart(6)}`,
+    '-'.repeat(20),
   ];
 
   if (hourly.length === 0) {
     lines.push('• 無資料');
   } else {
-    hourly.forEach(({ hour, count }) => {
-      lines.push(`  ${hour}  ${count} 次`);
+    hourly.forEach(({ hour, hitCount }) => {
+      lines.push(`${hour.padEnd(14)}${String(hitCount).padStart(6)}`);
     });
   }
 
@@ -395,98 +368,9 @@ async function main() {
   }
   console.log('');
 
-  // ── Probe 模式：列出欄位名稱 + 查 3 筆 event ────────────
-  if (args.probe) {
-    console.log('Cloudflare Workers Observability - Probe 模式');
-    console.log('='.repeat(48));
-    console.log(`Worker: ${args.worker || '（不限）'}`);
-    console.log('');
-
-    // 1. 列出所有欄位名稱
-    process.stdout.write('取得欄位清單 (keys)... ');
-    const keysBody = {
-      datasets: ['workers_trace_events'],
-      limit: 100,
-      filters: args.worker ? [{ key: 'scriptName', operation: 'eq', type: 'string', value: args.worker }] : [],
-    };
-    const keysResult = await callObservabilityAPI(args.accountId, args.apiToken, 'keys', keysBody);
-    const keys = keysResult.result?.data || [];
-    console.log(`${keys.length} 個欄位\n`);
-    keys.forEach((k) => console.log(`  ${k.key}  (${k.type})`));
-
-    // 2. 查 3 筆原始 event（最近 1 小時）
-    console.log('\n最近 1 小時的原始 events (limit 3):');
-    const now = Date.now();
-    const sampleBody = {
-      queryId: 'adhoc-query',
-      timeframe: { from: now - 3600_000, to: now },
-      view: 'events',
-      limit: 3,
-      parameters: {
-        filters: args.worker ? [{ key: '$metadata.service', operation: 'eq', type: 'string', value: args.worker }] : [],
-        filterCombination: 'and',
-      },
-    };
-    const sampleResult = await callObservabilityAPI(args.accountId, args.apiToken, 'query', sampleBody);
-    const sampleRows = sampleResult.result?.events?.events || [];
-    if (!sampleRows.length) {
-      console.log('  最近 1 小時查無資料');
-    } else {
-      sampleRows.forEach((r, i) => {
-        console.log(`\n--- 第 ${i + 1} 筆 ---`);
-        Object.entries(r).forEach(([k, v]) => {
-          const display = typeof v === 'object' ? JSON.stringify(v) : v;
-          console.log(`  ${k}: ${display}`);
-        });
-      });
-    }
-    return;
-  }
-
-  // ── Raw 模式：不帶任何 filter，只用時間範圍，確認欄位結構 ──
-  if (args.raw) {
-    if (!args.date) {
-      console.error('錯誤: --raw 模式需要 --date <YYYYMMDD>');
-      process.exit(1);
-    }
-    const dateDigits = normalizeDate(args.date);
-    const { fromMs, toMs, startDisplay, endDisplay } = buildUTCRange(dateDigits);
-    console.log('Raw 模式 - 不帶任何 filter，查 5 筆確認欄位');
-    console.log('='.repeat(48));
-    console.log(`時間範圍 (UTC): ${startDisplay} ~ ${endDisplay}`);
-    console.log('');
-    const rawBody = {
-      queryId: 'adhoc-query',
-      timeframe: { from: fromMs, to: toMs },
-      view: 'events',
-      limit: 5,
-      parameters: {
-        filterCombination: 'and',
-      },
-    };
-    const rawResult = await callObservabilityAPI(args.accountId, args.apiToken, 'query', rawBody);
-    const rawRows = rawResult.result?.events?.events || [];
-    const count = rawResult.result?.events?.count ?? 0;
-    console.log(`API 回報總數: ${count}，本次取得: ${rawRows.length} 筆\n`);
-    if (!rawRows.length) {
-      console.log('查無資料，請確認時間範圍或 API 權限');
-    } else {
-      rawRows.forEach((r, i) => {
-        console.log(`--- 第 ${i + 1} 筆 ---`);
-        Object.entries(r).forEach(([k, v]) => {
-          const display = typeof v === 'object' ? JSON.stringify(v) : v;
-          console.log(`  ${k}: ${display}`);
-        });
-        console.log('');
-      });
-    }
-    return;
-  }
-
   if (!args.date) {
     console.error('錯誤: 請指定 --date <YYYYMMDD>');
     console.log('用法: node cloudflare-log-fetcher.js --date <YYYYMMDD>');
-    console.log('      node cloudflare-log-fetcher.js --probe  （查欄位名稱）');
     process.exit(1);
   }
 
@@ -505,9 +389,7 @@ async function main() {
   console.log(`Worker   : ${args.worker || '（不限）'}`);
   console.log('');
 
-  const { total, hourly } = await fetchAllLogs(args.accountId, args.apiToken, dateDigits, args.worker);
-
-  console.log(`Astro cache hit 全天總計: ${total} 次`);
+  const { totalHits, hourly } = await fetchAllLogs(args.accountId, args.apiToken, dateDigits, args.worker);
 
   const outDir = args.output || path.join('./daily-analysis-result/cloudflare', dateDigits);
   if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
@@ -521,12 +403,11 @@ async function main() {
     account_id: args.accountId,
     date_tw: dateDash,
     worker: args.worker || null,
-    filter: "message regex 'Astro cache hit for'",
-    total_count: total,
+    total_hits: totalHits,
     hourly,
   };
   fs.writeFileSync(jsonPath, JSON.stringify(jsonOutput, null, 2), 'utf8');
-  fs.writeFileSync(txtPath, buildReport(dateDigits, args.worker, total, hourly), 'utf8');
+  fs.writeFileSync(txtPath, buildReport(dateDigits, args.worker, totalHits, hourly), 'utf8');
 
   console.log('\n結果已儲存:');
   console.log(`• JSON : ${jsonPath}`);

@@ -8,6 +8,7 @@
 // 說明:
 //   apiKey / appKey 固定設定於檔案頂部常數
 //   --date    查詢日期（台灣時區），格式 YYYYMMDD 或 YYYY-MM-DD（必填）
+//   --env     環境，預設 prd（astro-worker-prd），傳 stg 改為 astro-worker-stg
 //   --api-key / --app-key  選填，傳入時覆蓋頂部常數
 //
 // API: POST https://api.us5.datadoghq.com/api/v2/logs/events/search
@@ -22,13 +23,13 @@ const path = require('path');
 
 const DATADOG_API_KEY = 'DD_API_KEY_REMOVED';
 const DATADOG_APP_KEY = 'DD_APP_KEY_REMOVED';
-const DATADOG_QUERY_BASE = '@cloudflare.script_name:astro-worker-stg';
-const DATADOG_QUERY_SSR  = `${DATADOG_QUERY_BASE} @name:page-render`;
-const DATADOG_QUERY_SSG  = `${DATADOG_QUERY_BASE} message:ssg`;
+const WORKER_PRD = 'astro-worker-prd';
+const WORKER_STG = 'astro-worker-stg';
 const DATADOG_SITE = 'api.us5.datadoghq.com';
 
-const SSR_OUTPUT_DIR = './to-analyze-daily-data/ssr';
-const SSG_OUTPUT_DIR = './to-analyze-daily-data/ssg';
+const SSR_OUTPUT_DIR    = './to-analyze-daily-data/ssr';
+const SSG_OUTPUT_DIR    = './to-analyze-daily-data/ssg';
+const ERR404_OUTPUT_DIR = './to-analyze-daily-data/404-errors';
 
 const PAGE_LIMIT = 1000;
 const MAX_RETRIES = 3;
@@ -42,12 +43,14 @@ function parseArgs(argv) {
     apiKey: DATADOG_API_KEY,
     appKey: DATADOG_APP_KEY,
     date: null,
+    env: 'prd',
     debug: false,
   };
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === '--api-key' && argv[i + 1]) args.apiKey = argv[++i];
     else if (argv[i] === '--app-key' && argv[i + 1]) args.appKey = argv[++i];
     else if (argv[i] === '--date' && argv[i + 1]) args.date = argv[++i];
+    else if (argv[i] === '--env' && argv[i + 1]) args.env = argv[++i];
     else if (argv[i] === '--debug') args.debug = true;
   }
   return args;
@@ -94,6 +97,44 @@ function formatDuration(raw) {
   if (isNaN(n)) return String(raw);
   // Datadog duration 單位可能是 ns，>10000 視為 ns → 轉 ms
   return n > 10_000 ? `${Math.round(n / 1_000_000)}ms` : `${Math.round(n)}ms`;
+}
+
+// ============================
+// 404 統計工具
+// ============================
+
+function extractProductId(custom) {
+  return custom.productId ?? custom['@productId'] ?? custom.product_id ?? custom['@product_id'] ?? null;
+}
+
+// 回傳 Map<productId, Set<traceId>>
+// 同一次 page load（相同 trace_id）的不同 API 404 算同一次
+function process404Logs(logs) {
+  const result = new Map(); // productId -> Set<traceId>
+  for (const log of logs) {
+    const attr   = log.attributes || {};
+    const custom = attr.attributes || {};
+
+    const errorMsg = custom.error ?? '';
+    if (!errorMsg.includes('404')) continue;
+
+    const productId = extractProductId(custom);
+    if (!productId) continue;
+
+    const traceId = custom.otel?.trace_id ?? attr.timestamp ?? '';
+
+    if (!result.has(productId)) result.set(productId, new Set());
+    result.get(productId).add(traceId);
+  }
+  return result;
+}
+
+function logs404ToCsv(result) {
+  const rows = ['ProductId,404 次數'];
+  for (const [productId, traces] of result) {
+    rows.push(csvRow(productId, String(traces.size)));
+  }
+  return rows.join('\n');
 }
 
 // ============================
@@ -226,7 +267,7 @@ async function fetchAllLogs(apiKey, appKey, query, fromISO, toISO, label) {
 
     cursor = nextCursor;
     page++;
-    await sleep(500);
+    await sleep(2000);
   }
 
   console.log(`  共 ${allLogs.length} 筆\n`);
@@ -291,32 +332,43 @@ async function main() {
     process.exit(1);
   }
 
+  const worker  = args.env === 'stg' ? WORKER_STG : WORKER_PRD;
+  const querySSR = `@cloudflare.script_name:${worker} @name:page-render`;
+  const querySSG = `@cloudflare.script_name:${worker} message:ssg`;
+  const query404 = `@cloud.platform:cloudflare.workers @cloudflare.script_name:${worker} status:error @service:ssr-product-page`;
+
   const dateDash = `${dateDigits.slice(0, 4)}-${dateDigits.slice(4, 6)}-${dateDigits.slice(6, 8)}`;
   const { fromISO, toISO } = buildTWRange(dateDigits);
 
   console.log('Datadog Log Fetcher');
   console.log('='.repeat(48));
+  console.log(`環境     : ${args.env} (${worker})`);
   console.log(`查詢日期 : ${dateDash} 00:00:00 ~ 23:59:59 (台灣時區)`);
   console.log(`時間範圍 : ${fromISO} ~ ${toISO}`);
   console.log('');
 
-  const [ssrLogs, ssgLogs] = await Promise.all([
-    fetchAllLogs(args.apiKey, args.appKey, DATADOG_QUERY_SSR, fromISO, toISO, 'SSR'),
-    fetchAllLogs(args.apiKey, args.appKey, DATADOG_QUERY_SSG, fromISO, toISO, 'SSG'),
-  ]);
+  const ssrLogs    = await fetchAllLogs(args.apiKey, args.appKey, querySSR, fromISO, toISO, 'SSR');
+  const err404Logs = await fetchAllLogs(args.apiKey, args.appKey, query404, fromISO, toISO, '404-Error');
+  const ssgLogs    = await fetchAllLogs(args.apiKey, args.appKey, querySSG, fromISO, toISO, 'SSG');
+
+  const err404Map = process404Logs(err404Logs);
 
   fs.mkdirSync(SSR_OUTPUT_DIR, { recursive: true });
   fs.mkdirSync(SSG_OUTPUT_DIR, { recursive: true });
+  fs.mkdirSync(ERR404_OUTPUT_DIR, { recursive: true });
 
-  const ssrPath = path.join(SSR_OUTPUT_DIR, `ssr-product-log-${dateDigits}.csv`);
-  const ssgPath = path.join(SSG_OUTPUT_DIR, `ssg-product-log-${dateDigits}.csv`);
+  const ssrPath    = path.join(SSR_OUTPUT_DIR,    `ssr-product-log-${dateDigits}.csv`);
+  const ssgPath    = path.join(SSG_OUTPUT_DIR,    `ssg-product-log-${dateDigits}.csv`);
+  const err404Path = path.join(ERR404_OUTPUT_DIR, `404-errors-${dateDigits}.csv`);
 
-  fs.writeFileSync(ssrPath, logsToSSRCsv(ssrLogs), 'utf8');
-  fs.writeFileSync(ssgPath, logsToSSGCsv(ssgLogs), 'utf8');
+  fs.writeFileSync(ssrPath,    logsToSSRCsv(ssrLogs),      'utf8');
+  fs.writeFileSync(ssgPath,    logsToSSGCsv(ssgLogs),      'utf8');
+  fs.writeFileSync(err404Path, logs404ToCsv(err404Map),    'utf8');
 
   console.log('結果已儲存:');
-  console.log(`• SSR : ${ssrPath}  (${ssrLogs.length} 筆)`);
-  console.log(`• SSG : ${ssgPath}  (${ssgLogs.length} 筆)`);
+  console.log(`• SSR  : ${ssrPath}  (${ssrLogs.length} 筆)`);
+  console.log(`• SSG  : ${ssgPath}  (${ssgLogs.length} 筆)`);
+  console.log(`• 404  : ${err404Path}  (共 ${err404Map.size} 個商品)`);
 }
 
 main().catch((err) => {

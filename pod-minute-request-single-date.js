@@ -319,8 +319,8 @@ async function analyzePodMinuteRequestsForDate(inputDate) {
         const targetDate = formatDateString(inputDate);
         const displayDate = formatDisplayDate(targetDate);
         
-        const categoryInputFile = `./to-analyze-daily-data/user-agent-log/category/user-agent-log-${targetDate}-category.csv`;
-        const productInputFile = `./to-analyze-daily-data/user-agent-log/product/user-agent-log-${targetDate}-product.csv`;
+        const categoryInputFile = `./to-analyze-daily-data/prerender/user-agent-log/category/user-agent-log-${targetDate}-category.csv`;
+        const productInputFile = `./to-analyze-daily-data/prerender/user-agent-log/product/user-agent-log-${targetDate}-product.csv`;
         
         // 建立以日期命名的輸出資料夾
         const outputDir = `pod-minute-request-result/${displayDate}`;

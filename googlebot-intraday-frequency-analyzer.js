@@ -19,7 +19,7 @@
 const fs   = require('fs');
 const path = require('path');
 
-const BASE_DIR   = path.join(__dirname, 'to-analyze-daily-data/user-agent-log/product');
+const BASE_DIR   = path.join(__dirname, 'to-analyze-daily-data/prerender/user-agent-log/product');
 const OUTPUT_DIR = path.join(__dirname, 'googlebot-analysis');
 
 const GOOGLEBOT_RE = /Googlebot/i;

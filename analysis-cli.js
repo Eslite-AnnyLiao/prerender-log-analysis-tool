@@ -179,15 +179,15 @@ function checkDataFiles(date, filenamePattern = null, folder = null) {
     
     if (folder) {
         // Check L1/L2 folder structure
-        userAgentFile = `./to-analyze-daily-data/user-agent-log/${folder}/user-agent-log-${date}-category-${folder.slice(-1)}.csv`;
-        logsFile = `./to-analyze-daily-data/200-log/${folder}/log-${date}-category-${folder.slice(-1)}.csv`;
+        userAgentFile = `./to-analyze-daily-data/prerender/user-agent-log/${folder}/user-agent-log-${date}-category-${folder.slice(-1)}.csv`;
+        logsFile = `./to-analyze-daily-data/prerender/200-log/${folder}/log-${date}-category-${folder.slice(-1)}.csv`;
     } else if (filenamePattern) {
-        userAgentFile = `./to-analyze-daily-data/user-agent-log/user-agent-${filenamePattern}.csv`;
-        logsFile = `./to-analyze-daily-data/200-log/${filenamePattern}.csv`;
+        userAgentFile = `./to-analyze-daily-data/prerender/user-agent-log/user-agent-${filenamePattern}.csv`;
+        logsFile = `./to-analyze-daily-data/prerender/200-log/${filenamePattern}.csv`;
     } else {
         // Fallback to old naming pattern for backward compatibility
-        userAgentFile = `./to-analyze-daily-data/user-agent-log/user-agent-${date}.csv`;
-        logsFile = `./to-analyze-daily-data/200-log/logs-${date}.csv`;
+        userAgentFile = `./to-analyze-daily-data/prerender/user-agent-log/user-agent-${date}.csv`;
+        logsFile = `./to-analyze-daily-data/prerender/200-log/logs-${date}.csv`;
     }
     
     return {

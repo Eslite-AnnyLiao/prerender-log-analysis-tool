@@ -86,26 +86,26 @@ function checkDataFiles(date, folder = null) {
     let userAgentFile, logsFile;
     
     if (folder) {
-        userAgentFile = `./to-analyze-daily-data/user-agent-log/${folder}/user-agent-${date}.csv`;
-        logsFile = `./to-analyze-daily-data/200-log/${folder}/logs-${date}.csv`;
+        userAgentFile = `./to-analyze-daily-data/prerender/user-agent-log/${folder}/user-agent-${date}.csv`;
+        logsFile = `./to-analyze-daily-data/prerender/200-log/${folder}/logs-${date}.csv`;
         
         // Also check for URL-based filename pattern
-        if (fs.existsSync(`./to-analyze-daily-data/200-log/${folder}/`)) {
-            const urlPatternFiles = fs.readdirSync(`./to-analyze-daily-data/200-log/${folder}/`, { withFileTypes: true })
+        if (fs.existsSync(`./to-analyze-daily-data/prerender/200-log/${folder}/`)) {
+            const urlPatternFiles = fs.readdirSync(`./to-analyze-daily-data/prerender/200-log/${folder}/`, { withFileTypes: true })
                 .filter(dirent => dirent.isFile() && dirent.name.includes(date) && dirent.name.endsWith('.csv'))
                 .map(dirent => dirent.name);
             
             if (urlPatternFiles.length > 0) {
                 // Use the first matching file for URL-based pattern
                 const basePattern = urlPatternFiles[0].replace('.csv', '');
-                logsFile = `./to-analyze-daily-data/200-log/${folder}/${basePattern}.csv`;
-                userAgentFile = `./to-analyze-daily-data/user-agent-log/${folder}/user-agent-${basePattern}.csv`;
+                logsFile = `./to-analyze-daily-data/prerender/200-log/${folder}/${basePattern}.csv`;
+                userAgentFile = `./to-analyze-daily-data/prerender/user-agent-log/${folder}/user-agent-${basePattern}.csv`;
             }
         }
     } else {
         // Traditional format without folder
-        userAgentFile = `./to-analyze-daily-data/user-agent-log/user-agent-${date}.csv`;
-        logsFile = `./to-analyze-daily-data/200-log/logs-${date}.csv`;
+        userAgentFile = `./to-analyze-daily-data/prerender/user-agent-log/user-agent-${date}.csv`;
+        logsFile = `./to-analyze-daily-data/prerender/200-log/logs-${date}.csv`;
     }
     
     return {

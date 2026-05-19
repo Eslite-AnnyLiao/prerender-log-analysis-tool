@@ -186,8 +186,8 @@ show_usage() {
     echo "  - api/v1/users → api-v1-users"
     echo ""
     echo "輸出檔案位置:"
-    echo "  - ./to-analyze-daily-data/200-log/[folder]/<filename>.csv"
-    echo "  - ./to-analyze-daily-data/user-agent-log/[folder]/user-agent-<filename>.csv"
+    echo "  - ./to-analyze-daily-data/prerender/200-log/[folder]/<filename>.csv"
+    echo "  - ./to-analyze-daily-data/prerender/user-agent-log/[folder]/user-agent-<filename>.csv"
 }
 
 # Check prerequisites
@@ -246,8 +246,8 @@ create_directories() {
     print_step 3 "準備輸出目錄"
     
     local dirs=(
-        "./to-analyze-daily-data/200-log/${folder_name}"
-        "./to-analyze-daily-data/user-agent-log/${folder_name}"
+        "./to-analyze-daily-data/prerender/200-log/${folder_name}"
+        "./to-analyze-daily-data/prerender/user-agent-log/${folder_name}"
     )
     
     for dir in "${dirs[@]}"; do
@@ -391,7 +391,7 @@ main() {
     local search_200="SEARCH(\"\`got 200 in\` \`${url}\` \")"
     if ! execute_query \
         "HTTP 200 回應" \
-        "./to-analyze-daily-data/200-log/${folder_name}" \
+        "./to-analyze-daily-data/prerender/200-log/${folder_name}" \
         "${filename_base}.csv" \
         "$formatted_date" \
         "$search_200"; then
@@ -408,7 +408,7 @@ main() {
     local search_ua="SEARCH(\"\`X-Original-User-Agent:\` \`${url}\` \")"
     if ! execute_query \
         "User-Agent" \
-        "./to-analyze-daily-data/user-agent-log/${folder_name}" \
+        "./to-analyze-daily-data/prerender/user-agent-log/${folder_name}" \
         "user-agent-${filename_base}.csv" \
         "$formatted_date" \
         "$search_ua"; then

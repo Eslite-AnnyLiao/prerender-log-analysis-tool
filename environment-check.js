@@ -204,8 +204,8 @@ function checkDirectories() {
     log.info('Checking directory structure...');
     
     const requiredDirs = [
-        'to-analyze-daily-data/200-log',
-        'to-analyze-daily-data/user-agent-log',
+        'to-analyze-daily-data/prerender/200-log',
+        'to-analyze-daily-data/prerender/user-agent-log',
         'daily-analysis-result',
         'daily-pod-analysis-result',
         'to-analyze-performance-data',

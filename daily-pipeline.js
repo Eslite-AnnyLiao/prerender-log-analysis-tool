@@ -217,7 +217,7 @@ function mergeCFIntoCombined(dateDigits) {
 function merge404IntoCombined(dateDigits) {
   const csvPath = path.join(
     __dirname,
-    `./to-analyze-daily-data/404-errors/404-errors-${dateDigits}.csv`,
+    `./to-analyze-daily-data/astro/404-errors/404-errors-${dateDigits}.csv`,
   );
   const combinedPath = path.join(
     __dirname,
@@ -281,15 +281,15 @@ function printSummary(dateDigits, cfOk, ddOk, analyzerOk) {
       label: 'Datadog 原始 CSV',
       ok: ddOk,
       files: [
-        `./to-analyze-daily-data/ssr/ssr-product-log-${dateDigits}.csv`,
-        `./to-analyze-daily-data/ssg/ssg-product-log-${dateDigits}.csv`,
+        `./to-analyze-daily-data/astro/ssr/ssr-product-log-${dateDigits}.csv`,
+        `./to-analyze-daily-data/astro/ssg/ssg-product-log-${dateDigits}.csv`,
       ],
     },
     {
       label: '404 錯誤原始 CSV',
       ok: true,
       files: [
-        `./to-analyze-daily-data/404-errors/404-errors-${dateDigits}.csv`,
+        `./to-analyze-daily-data/astro/404-errors/404-errors-${dateDigits}.csv`,
       ],
     },
     {

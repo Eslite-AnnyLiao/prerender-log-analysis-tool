@@ -2,8 +2,8 @@
 
 // 分析 Datadog Export CSV 格式（SSG / SSR）
 // 用法:
-//   node gcp-export-analyzer.js --type ssg --input ./to-analyze-daily-data/ssg/xxx.csv
-//   node gcp-export-analyzer.js --type ssr --input ./to-analyze-daily-data/ssr/xxx.csv [--output <dir>]
+//   node gcp-export-analyzer.js --type ssg --input ./to-analyze-daily-data/astro/ssg/xxx.csv
+//   node gcp-export-analyzer.js --type ssr --input ./to-analyze-daily-data/astro/ssr/xxx.csv [--output <dir>]
 
 const fs = require('fs');
 const path = require('path');
@@ -962,7 +962,7 @@ function normalizeDate(dateStr) {
 // 依固定命名規則 {type}-product-log-YYYYMMDD.csv 組出路徑
 // strict=true 時找不到直接 exit，strict=false 時回傳 null
 function findInputByDate(type, dateDigits, strict = true) {
-    const filePath = `./to-analyze-daily-data/${type}/${type}-product-log-${dateDigits}.csv`;
+    const filePath = `./to-analyze-daily-data/astro/${type}/${type}-product-log-${dateDigits}.csv`;
     if (!fs.existsSync(filePath)) {
         if (strict) {
             console.error(`錯誤: 找不到檔案 "${filePath}"`);

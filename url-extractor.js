@@ -454,11 +454,11 @@ function generateFilePaths(date, target) {
     let userAgentFile, logsFile;
     
     if (target === 'category') {
-        userAgentFile = `${baseDir}/user-agent-log/category/user-agent-log-${date}-category.csv`;
-        logsFile = `${baseDir}/200-log/category/log-${date}-category.csv`;
+        userAgentFile = `${baseDir}/prerender/user-agent-log/category/user-agent-log-${date}-category.csv`;
+        logsFile = `${baseDir}/prerender/200-log/category/log-${date}-category.csv`;
     } else if (target === 'product') {
-        userAgentFile = `${baseDir}/user-agent-log/product/user-agent-log-${date}-product.csv`;
-        logsFile = `${baseDir}/200-log/product/log-${date}-product.csv`;
+        userAgentFile = `${baseDir}/prerender/user-agent-log/product/user-agent-log-${date}-product.csv`;
+        logsFile = `${baseDir}/prerender/200-log/product/log-${date}-product.csv`;
     } else {
         throw new Error(`不支援的目標類型: ${target}，請使用 'category' 或 'product'`);
     }

@@ -299,7 +299,7 @@ class UserAgentStatisticsAnalyzer {
     
     console.log(`\n📅 處理 ${startDate} 到 ${endDate} 期間的檔案...`);
     
-    const userAgentLogDir = path.join(this.dataDir, 'user-agent-log');
+    const userAgentLogDir = path.join(this.dataDir, 'prerender/user-agent-log');
     const targetDates = this.generateDateRange(startDate, endDate);
     
     for (const date of targetDates) {

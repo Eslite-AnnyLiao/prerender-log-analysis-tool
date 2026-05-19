@@ -27,9 +27,9 @@ const WORKER_PRD = 'astro-worker-prd';
 const WORKER_STG = 'astro-worker-stg';
 const DATADOG_SITE = 'api.us5.datadoghq.com';
 
-const SSR_OUTPUT_DIR    = './to-analyze-daily-data/ssr';
-const SSG_OUTPUT_DIR    = './to-analyze-daily-data/ssg';
-const ERR404_OUTPUT_DIR = './to-analyze-daily-data/404-errors';
+const SSR_OUTPUT_DIR    = './to-analyze-daily-data/astro/ssr';
+const SSG_OUTPUT_DIR    = './to-analyze-daily-data/astro/ssg';
+const ERR404_OUTPUT_DIR = './to-analyze-daily-data/astro/404-errors';
 
 const PAGE_LIMIT = 1000;
 const MAX_RETRIES = 3;

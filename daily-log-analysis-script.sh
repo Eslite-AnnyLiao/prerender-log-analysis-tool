@@ -105,29 +105,29 @@ for date in "${dates[@]}"; do
         # 使用自訂檔名模式 (將日期替換為當前處理的日期)
         current_pattern=$(echo "$filename_pattern" | sed "s/[0-9]\{8\}/$date/g")
         if [ -n "$folder_name" ]; then
-            user_agent_file="./to-analyze-daily-data/user-agent-log/${folder_name}/user-agent-${current_pattern}.csv"
-            logs_file="./to-analyze-daily-data/200-log/${folder_name}/${current_pattern}.csv"
+            user_agent_file="./to-analyze-daily-data/prerender/user-agent-log/${folder_name}/user-agent-${current_pattern}.csv"
+            logs_file="./to-analyze-daily-data/prerender/200-log/${folder_name}/${current_pattern}.csv"
         else
-            user_agent_file="./to-analyze-daily-data/user-agent-log/user-agent-${current_pattern}.csv"
-            logs_file="./to-analyze-daily-data/200-log/${current_pattern}.csv"
+            user_agent_file="./to-analyze-daily-data/prerender/user-agent-log/user-agent-${current_pattern}.csv"
+            logs_file="./to-analyze-daily-data/prerender/200-log/${current_pattern}.csv"
         fi
     elif [ -n "$folder_name" ]; then
         # 使用指定資料夾，嘗試多種檔名格式
         # 先嘗試傳統檔名格式
-        user_agent_file="./to-analyze-daily-data/user-agent-log/${folder_name}/user-agent-${date}.csv"
-        logs_file="./to-analyze-daily-data/200-log/${folder_name}/logs-${date}.csv"
+        user_agent_file="./to-analyze-daily-data/prerender/user-agent-log/${folder_name}/user-agent-${date}.csv"
+        logs_file="./to-analyze-daily-data/prerender/200-log/${folder_name}/logs-${date}.csv"
         
         # 如果傳統格式檔案不存在，嘗試 URL 檔名格式
         if [ ! -f "$user_agent_file" ] || [ ! -f "$logs_file" ]; then
             # 尋找符合日期的任何檔案
-            if [ -d "./to-analyze-daily-data/user-agent-log/${folder_name}" ]; then
-                potential_ua_file=$(find "./to-analyze-daily-data/user-agent-log/${folder_name}" -name "*${date}*.csv" | head -1)
+            if [ -d "./to-analyze-daily-data/prerender/user-agent-log/${folder_name}" ]; then
+                potential_ua_file=$(find "./to-analyze-daily-data/prerender/user-agent-log/${folder_name}" -name "*${date}*.csv" | head -1)
                 if [ -n "$potential_ua_file" ]; then
                     user_agent_file="$potential_ua_file"
                 fi
             fi
-            if [ -d "./to-analyze-daily-data/200-log/${folder_name}" ]; then
-                potential_logs_file=$(find "./to-analyze-daily-data/200-log/${folder_name}" -name "*${date}*.csv" | head -1)
+            if [ -d "./to-analyze-daily-data/prerender/200-log/${folder_name}" ]; then
+                potential_logs_file=$(find "./to-analyze-daily-data/prerender/200-log/${folder_name}" -name "*${date}*.csv" | head -1)
                 if [ -n "$potential_logs_file" ]; then
                     logs_file="$potential_logs_file"
                 fi
@@ -135,8 +135,8 @@ for date in "${dates[@]}"; do
         fi
     else
         # 使用傳統檔名格式
-        user_agent_file="./to-analyze-daily-data/user-agent-log/user-agent-${date}.csv"
-        logs_file="./to-analyze-daily-data/200-log/logs-${date}.csv"
+        user_agent_file="./to-analyze-daily-data/prerender/user-agent-log/user-agent-${date}.csv"
+        logs_file="./to-analyze-daily-data/prerender/200-log/logs-${date}.csv"
     fi
 
     if [ -f "$user_agent_file" ] && [ -f "$logs_file" ]; then
@@ -167,29 +167,29 @@ for date in "${dates[@]}"; do
         # 使用自訂檔名模式 (將日期替換為當前處理的日期)
         current_pattern=$(echo "$filename_pattern" | sed "s/[0-9]\{8\}/$date/g")
         if [ -n "$folder_name" ]; then
-            user_agent_file="./to-analyze-daily-data/user-agent-log/${folder_name}/user-agent-${current_pattern}.csv"
-            logs_file="./to-analyze-daily-data/200-log/${folder_name}/${current_pattern}.csv"
+            user_agent_file="./to-analyze-daily-data/prerender/user-agent-log/${folder_name}/user-agent-${current_pattern}.csv"
+            logs_file="./to-analyze-daily-data/prerender/200-log/${folder_name}/${current_pattern}.csv"
         else
-            user_agent_file="./to-analyze-daily-data/user-agent-log/user-agent-${current_pattern}.csv"
-            logs_file="./to-analyze-daily-data/200-log/${current_pattern}.csv"
+            user_agent_file="./to-analyze-daily-data/prerender/user-agent-log/user-agent-${current_pattern}.csv"
+            logs_file="./to-analyze-daily-data/prerender/200-log/${current_pattern}.csv"
         fi
     elif [ -n "$folder_name" ]; then
         # 使用指定資料夾，嘗試多種檔名格式
         # 先嘗試傳統檔名格式
-        user_agent_file="./to-analyze-daily-data/user-agent-log/${folder_name}/user-agent-${date}.csv"
-        logs_file="./to-analyze-daily-data/200-log/${folder_name}/logs-${date}.csv"
+        user_agent_file="./to-analyze-daily-data/prerender/user-agent-log/${folder_name}/user-agent-${date}.csv"
+        logs_file="./to-analyze-daily-data/prerender/200-log/${folder_name}/logs-${date}.csv"
         
         # 如果傳統格式檔案不存在，嘗試 URL 檔名格式
         if [ ! -f "$user_agent_file" ] || [ ! -f "$logs_file" ]; then
             # 尋找符合日期的任何檔案
-            if [ -d "./to-analyze-daily-data/user-agent-log/${folder_name}" ]; then
-                potential_ua_file=$(find "./to-analyze-daily-data/user-agent-log/${folder_name}" -name "*${date}*.csv" | head -1)
+            if [ -d "./to-analyze-daily-data/prerender/user-agent-log/${folder_name}" ]; then
+                potential_ua_file=$(find "./to-analyze-daily-data/prerender/user-agent-log/${folder_name}" -name "*${date}*.csv" | head -1)
                 if [ -n "$potential_ua_file" ]; then
                     user_agent_file="$potential_ua_file"
                 fi
             fi
-            if [ -d "./to-analyze-daily-data/200-log/${folder_name}" ]; then
-                potential_logs_file=$(find "./to-analyze-daily-data/200-log/${folder_name}" -name "*${date}*.csv" | head -1)
+            if [ -d "./to-analyze-daily-data/prerender/200-log/${folder_name}" ]; then
+                potential_logs_file=$(find "./to-analyze-daily-data/prerender/200-log/${folder_name}" -name "*${date}*.csv" | head -1)
                 if [ -n "$potential_logs_file" ]; then
                     logs_file="$potential_logs_file"
                 fi
@@ -197,8 +197,8 @@ for date in "${dates[@]}"; do
         fi
     else
         # 使用傳統檔名格式
-        user_agent_file="./to-analyze-daily-data/user-agent-log/user-agent-${date}.csv"
-        logs_file="./to-analyze-daily-data/200-log/logs-${date}.csv"
+        user_agent_file="./to-analyze-daily-data/prerender/user-agent-log/user-agent-${date}.csv"
+        logs_file="./to-analyze-daily-data/prerender/200-log/logs-${date}.csv"
     fi
 
     if [ -f "$user_agent_file" ] && [ -f "$logs_file" ]; then

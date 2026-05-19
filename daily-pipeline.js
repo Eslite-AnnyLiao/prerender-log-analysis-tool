@@ -187,11 +187,11 @@ function parseDDLine(line, display) {
 function mergeCFIntoCombined(dateDigits) {
   const cfPath = path.join(
     __dirname,
-    `./daily-analysis-result/cloudflare/${dateDigits}/cloudflare-astro-cache-hit-${dateDigits}.json`,
+    `./daily-analysis-result/astro/cloudflare/${dateDigits}/cloudflare-astro-cache-hit-${dateDigits}.json`,
   );
   const combinedPath = path.join(
     __dirname,
-    `./daily-analysis-result/datadog-export/combined/combined-${dateDigits}_analysis.json`,
+    `./daily-analysis-result/astro/datadog-export/combined/combined-${dateDigits}_analysis.json`,
   );
 
   if (!fs.existsSync(cfPath)) { console.log('  ⚠️  CF JSON 不存在，略過 merge'); return false; }
@@ -221,7 +221,7 @@ function merge404IntoCombined(dateDigits) {
   );
   const combinedPath = path.join(
     __dirname,
-    `./daily-analysis-result/datadog-export/combined/combined-${dateDigits}_analysis.json`,
+    `./daily-analysis-result/astro/datadog-export/combined/combined-${dateDigits}_analysis.json`,
   );
 
   if (!fs.existsSync(csvPath)) { console.log('  ⚠️  404 CSV 不存在，略過 merge'); return false; }
@@ -273,8 +273,8 @@ function printSummary(dateDigits, cfOk, ddOk, analyzerOk) {
       label: 'Cloudflare Cache Hit Log',
       ok: cfOk,
       files: [
-        `./daily-analysis-result/cloudflare/${dateDigits}/cloudflare-astro-cache-hit-${dateDigits}.json`,
-        `./daily-analysis-result/cloudflare/${dateDigits}/cloudflare-astro-cache-hit-${dateDigits}.txt`,
+        `./daily-analysis-result/astro/cloudflare/${dateDigits}/cloudflare-astro-cache-hit-${dateDigits}.json`,
+        `./daily-analysis-result/astro/cloudflare/${dateDigits}/cloudflare-astro-cache-hit-${dateDigits}.txt`,
       ],
     },
     {
@@ -296,12 +296,12 @@ function printSummary(dateDigits, cfOk, ddOk, analyzerOk) {
       label: 'Datadog 分析報告',
       ok: analyzerOk,
       files: [
-        `./daily-analysis-result/datadog-export/ssg/ssg-product-log-${dateDigits}_analysis.txt`,
-        `./daily-analysis-result/datadog-export/ssg/ssg-product-log-${dateDigits}_analysis.json`,
-        `./daily-analysis-result/datadog-export/ssr/ssr-product-log-${dateDigits}_analysis.txt`,
-        `./daily-analysis-result/datadog-export/ssr/ssr-product-log-${dateDigits}_analysis.json`,
-        `./daily-analysis-result/datadog-export/combined/combined-${dateDigits}_analysis.txt`,
-        `./daily-analysis-result/datadog-export/combined/combined-${dateDigits}_analysis.json`,
+        `./daily-analysis-result/astro/datadog-export/ssg/ssg-product-log-${dateDigits}_analysis.txt`,
+        `./daily-analysis-result/astro/datadog-export/ssg/ssg-product-log-${dateDigits}_analysis.json`,
+        `./daily-analysis-result/astro/datadog-export/ssr/ssr-product-log-${dateDigits}_analysis.txt`,
+        `./daily-analysis-result/astro/datadog-export/ssr/ssr-product-log-${dateDigits}_analysis.json`,
+        `./daily-analysis-result/astro/datadog-export/combined/combined-${dateDigits}_analysis.txt`,
+        `./daily-analysis-result/astro/datadog-export/combined/combined-${dateDigits}_analysis.json`,
       ],
     },
   ];

@@ -1246,7 +1246,7 @@ async function main() {
         // 確保 result 資料夾存在
         let resultDir = 'daily-analysis-result';
         if (folderName) {
-            resultDir = `daily-analysis-result/${folderName}`;
+            resultDir = `daily-analysis-result/prerender/${folderName}`;
         }
         if (!fs.existsSync(resultDir)) {
             fs.mkdirSync(resultDir, { recursive: true });

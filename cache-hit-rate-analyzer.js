@@ -332,7 +332,7 @@ function parseArgs() {
     }
 
     // 組合完整路徑
-    const baseDir = './daily-analysis-result';
+    const baseDir = './daily-analysis-result/prerender';
     const dir = path.join(baseDir, folder);
 
     // 自動生成輸出檔名

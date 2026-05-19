@@ -148,7 +148,7 @@ function processPerformanceData() {
     const results = [];
     
     // 定義檔案路徑
-    const baseDir1 = '/Users/liaoliting/Webserver/analysis-log/daily-analysis-result/category/';      // .txt 檔案目錄
+    const baseDir1 = '/Users/liaoliting/Webserver/analysis-log/daily-analysis-result/prerender/category/';      // .txt 檔案目錄
     const baseDir2 = '/Users/liaoliting/Webserver/analysis-log/daily-pod-analysis-result/category/';  // .json 檔案目錄
     
     // 輸出表頭

@@ -126,21 +126,21 @@ for date in "${dates[@]}"; do
     if [ -n "$page_type" ]; then
         # 依據參數決定檔案路徑和檔名
         if [ "$page_type" = "category" ]; then
-            category_file="./daily-analysis-result/category/dual_user-agent-log-${date}-category_log-${date}-category_analysis.json"
+            category_file="./daily-analysis-result/prerender/category/dual_user-agent-log-${date}-category_log-${date}-category_analysis.json"
             product_file="" # 只處理 category
             
         elif [ "$page_type" = "product" ]; then
             category_file="" # 只處理 product
-            product_file="./daily-analysis-result/product/dual_user-agent-log-${date}-product_log-${date}-product_analysis.json"
+            product_file="./daily-analysis-result/prerender/product/dual_user-agent-log-${date}-product_log-${date}-product_analysis.json"
             
         elif [ "$page_type" = "root" ]; then
             category_file="" # 只處理 root
-            product_file="./daily-analysis-result/root/dual_user-agent-log-${date}-root_log-${date}-root_analysis.json"
+            product_file="./daily-analysis-result/prerender/root/dual_user-agent-log-${date}-root_log-${date}-root_analysis.json"
             
         else
             # 其他自定義資料夾，同時檢查 category 和 product
-            category_file="./daily-analysis-result/category/dual_user-agent-log-${date}-${page_type}_log-${date}-${page_type}_analysis.json"
-            product_file="./daily-analysis-result/product/dual_user-agent-log-${date}-${page_type}_log-${date}-${page_type}_analysis.json"
+            category_file="./daily-analysis-result/prerender/category/dual_user-agent-log-${date}-${page_type}_log-${date}-${page_type}_analysis.json"
+            product_file="./daily-analysis-result/prerender/product/dual_user-agent-log-${date}-${page_type}_log-${date}-${page_type}_analysis.json"
         fi
         
         # 複製 category 檔案

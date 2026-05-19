@@ -11,7 +11,7 @@
 //   --date    查詢日期（台灣時區），格式 YYYYMMDD 或 YYYY-MM-DD（必填）
 //   --env     環境（prod|stg），決定 worker 名稱（預設: prod）
 //   --worker  直接指定 Worker script 名稱，傳入時覆蓋 --env
-//   --output  輸出目錄（預設: ./daily-analysis-result/cloudflare/YYYYMMDD）
+//   --output  輸出目錄（預設: ./daily-analysis-result/astro/cloudflare/YYYYMMDD）
 //   --account-id / --api-token  選填，傳入時覆蓋頂部常數
 //
 // API: POST /accounts/{id}/workers/observability/telemetry/query
@@ -405,7 +405,7 @@ async function main() {
 
   const { totalSsrHits, totalSsgHits, hourly } = await fetchAllLogs(args.accountId, args.apiToken, dateDigits, args.worker);
 
-  const outDir = args.output || path.join('./daily-analysis-result/cloudflare', dateDigits);
+  const outDir = args.output || path.join('./daily-analysis-result/astro/cloudflare', dateDigits);
   if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 
   const base = `cloudflare-astro-cache-hit-${dateDigits}`;

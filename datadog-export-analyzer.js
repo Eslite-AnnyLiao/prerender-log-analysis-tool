@@ -1050,7 +1050,7 @@ async function main() {
         const combinedAgg = mergeCombinedAggregates(ssgRecords, ssrRecords);
         const report = generateCombinedReport(dateDigits, ssgFile, ssrFile, ssgRecords, ssrRecords, combinedAgg);
 
-        const outDir = output || `./daily-analysis-result/datadog-export/combined`;
+        const outDir = output || `./daily-analysis-result/astro/datadog-export/combined`;
         if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 
         const txtPath = path.join(outDir, `combined-${dateDigits}_analysis.txt`);
@@ -1184,7 +1184,7 @@ async function main() {
         ? generateSSGReport(input, records, agg, computed)
         : generateSSRReport(input, records, agg, computed);
 
-    const outDir = output || `./daily-analysis-result/datadog-export/${type}`;
+    const outDir = output || `./daily-analysis-result/astro/datadog-export/${type}`;
     if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 
     const base = path.basename(input, '.csv');

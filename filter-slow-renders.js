@@ -103,10 +103,10 @@ function generatePaths(date, target) {
     let sourceFile, targetDir;
     
     if (target === 'category') {
-        sourceFile = `./daily-analysis-result/category/dual_user-agent-log-${date}-category_log-${date}-category_analysis.json`;
+        sourceFile = `./daily-analysis-result/prerender/category/dual_user-agent-log-${date}-category_log-${date}-category_analysis.json`;
         targetDir = './slow-render-periods-log/category';
     } else if (target === 'product') {
-        sourceFile = `./daily-analysis-result/product/dual_user-agent-log-${date}-product_log-${date}-product_analysis.json`;
+        sourceFile = `./daily-analysis-result/prerender/product/dual_user-agent-log-${date}-product_log-${date}-product_analysis.json`;
         targetDir = './slow-render-periods-log/product';
     }
     

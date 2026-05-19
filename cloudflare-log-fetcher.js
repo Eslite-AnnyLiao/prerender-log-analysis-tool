@@ -4,12 +4,13 @@
 //
 // 用法:
 //   node cloudflare-log-fetcher.js --date <YYYYMMDD>
-//   node cloudflare-log-fetcher.js --date <YYYY-MM-DD> --worker <workerName> --output <dir>
+//   node cloudflare-log-fetcher.js --date <YYYY-MM-DD> --env <prod|stg> --output <dir>
 //
 // 說明:
 //   accountId / apiToken / workerName 固定設定於檔案頂部常數
 //   --date    查詢日期（台灣時區），格式 YYYYMMDD 或 YYYY-MM-DD（必填）
-//   --worker  Worker script 名稱，用於過濾 scriptName（選填，傳入時覆蓋頂部常數）
+//   --env     環境（prod|stg），決定 worker 名稱（預設: prod）
+//   --worker  直接指定 Worker script 名稱，傳入時覆蓋 --env
 //   --output  輸出目錄（預設: ./daily-analysis-result/cloudflare/YYYYMMDD）
 //   --account-id / --api-token  選填，傳入時覆蓋頂部常數
 //
@@ -25,13 +26,18 @@ const path = require('path');
 
 const CLOUDFLARE_ACCOUNT_ID = 'CF_ACCOUNT_ID_REMOVED';
 const CLOUDFLARE_API_TOKEN = 'CF_API_TOKEN_REMOVED';
-const CLOUDFLARE_WORKER_NAME = 'stg-eslite-com';
+const CLOUDFLARE_WORKER_NAME = 'www-eslite-com';
+
+const ENV_WORKER_MAP = {
+  prod: 'www-eslite-com',
+  stg:  'stg-eslite-com',
+};
 
 // Cloudflare Logs Explorer SQL API rate limit: 6 requests / minute
-// 每次請求後至少等待 11 秒，確保不超過限制
+// 每 slot 查 SSR + SSG 共 2 req，6 slot × 2 = 12 req total，rate limiter 自動節流
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_REQUESTS = 6;
-const REQUEST_INTERVAL_MS = Math.ceil(RATE_LIMIT_WINDOW_MS / RATE_LIMIT_MAX_REQUESTS) + 1000; // ~11s
+const SLOT_HOURS = 4; // 每個查詢 slot 跨幾小時（減少 API 呼叫次數）
 const PAGE_LIMIT = 1000;
 const MAX_RETRIES = 3;
 
@@ -43,18 +49,24 @@ function parseArgs(argv) {
   const args = {
     accountId: CLOUDFLARE_ACCOUNT_ID,
     apiToken: CLOUDFLARE_API_TOKEN,
-    worker: CLOUDFLARE_WORKER_NAME,
+    worker: null,
     date: null,
     output: null,
     debug: false,
   };
+  let env = 'prod';
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === '--account-id' && argv[i + 1]) args.accountId = argv[++i];
     else if (argv[i] === '--api-token' && argv[i + 1]) args.apiToken = argv[++i];
+    else if (argv[i] === '--env' && argv[i + 1]) env = argv[++i];
     else if (argv[i] === '--worker' && argv[i + 1]) args.worker = argv[++i];
     else if (argv[i] === '--date' && argv[i + 1]) args.date = argv[++i];
     else if (argv[i] === '--output' && argv[i + 1]) args.output = argv[++i];
     else if (argv[i] === '--debug') args.debug = true;
+  }
+  // --worker 優先；否則依 --env 對應
+  if (!args.worker) {
+    args.worker = ENV_WORKER_MAP[env] ?? CLOUDFLARE_WORKER_NAME;
   }
   return args;
 }
@@ -258,8 +270,8 @@ async function callObservabilityAPI(accountId, apiToken, subpath, body, retries 
 // 分頁取得所有 Log
 // ============================
 
-function buildCacheHitFilters(worker) {
-  const filters = [{ kind: 'filter', key: 'message', operation: 'regex', type: 'string', value: '^Astro cache hit for' }];
+function buildCacheHitFilters(worker, cacheType) {
+  const filters = [{ kind: 'filter', key: 'message', operation: 'regex', type: 'string', value: `^Astro cache hit for .+: ${cacheType}$` }];
   if (worker) filters.push({ kind: 'filter', key: '$metadata.service', operation: 'eq', type: 'string', value: worker });
   return filters;
 }
@@ -280,63 +292,65 @@ async function fetchCalcCount(accountId, apiToken, filters, fromMs, toMs) {
 
 async function fetchAllLogs(accountId, apiToken, dateDigits, worker) {
   const { fromMs, toMs, startDisplay, endDisplay } = buildUTCRange(dateDigits);
-  const HOUR_MS = 3600_000;
+  const SLOT_MS = SLOT_HOURS * 3600_000;
   const hourlyResults = [];
 
   console.log(`查詢時間範圍 (UTC): ${startDisplay} ~ ${endDisplay}`);
   console.log(`Worker: ${worker || '（不限）'}`);
-  console.log(`Cache hit 條件: message regex '^Astro cache hit for'`);
-  console.log(`策略: 每小時分批查詢`);
+  console.log(`Cache hit 條件: astro-ssr / astro-ssg（每 ${SLOT_HOURS} 小時並行查詢）`);
   console.log('');
 
   let slotStart = fromMs;
 
   while (slotStart < toMs) {
-    const slotEnd = Math.min(slotStart + HOUR_MS - 1, toMs);
+    const slotEnd = Math.min(slotStart + SLOT_MS - 1, toMs);
     const label = `${twHHMM(slotStart)}~${twHHMM(slotEnd)} (TW)`;
     process.stdout.write(`  ${label} `);
 
-    const hitCount = await fetchCalcCount(accountId, apiToken, buildCacheHitFilters(worker), slotStart, slotEnd);
+    const [ssrCount, ssgCount] = await Promise.all([
+      fetchCalcCount(accountId, apiToken, buildCacheHitFilters(worker, 'astro-ssr'), slotStart, slotEnd),
+      fetchCalcCount(accountId, apiToken, buildCacheHitFilters(worker, 'astro-ssg'), slotStart, slotEnd),
+    ]);
 
-    console.log(`hit=${hitCount}`);
+    console.log(`ssr=${ssrCount} ssg=${ssgCount}`);
 
-    if (hitCount > 0) {
-      hourlyResults.push({ hour: twHHMM(slotStart), hitCount });
+    if (ssrCount > 0 || ssgCount > 0) {
+      hourlyResults.push({ hour: twHHMM(slotStart), ssrHitCount: ssrCount, ssgHitCount: ssgCount });
     }
 
-    slotStart += HOUR_MS;
-    if (slotStart < toMs) await sleep(10_000);
+    slotStart += SLOT_MS;
   }
 
-  const totalHits = hourlyResults.reduce((s, r) => s + r.hitCount, 0);
-  console.log(`\nAstro cache hit: ${totalHits} 次\n`);
-  return { totalHits, hourly: hourlyResults };
+  const totalSsrHits = hourlyResults.reduce((s, r) => s + r.ssrHitCount, 0);
+  const totalSsgHits = hourlyResults.reduce((s, r) => s + r.ssgHitCount, 0);
+  console.log(`\nAstro cache hit  SSR: ${totalSsrHits} 次  SSG: ${totalSsgHits} 次\n`);
+  return { totalSsrHits, totalSsgHits, hourly: hourlyResults };
 }
 
 // ============================
 // 輸出報告
 // ============================
 
-function buildReport(dateDigits, worker, totalHits, hourly) {
+function buildReport(dateDigits, worker, totalSsrHits, totalSsgHits, hourly) {
   const dateDash = `${dateDigits.slice(0, 4)}-${dateDigits.slice(4, 6)}-${dateDigits.slice(6, 8)}`;
   const lines = [
     'Cloudflare Workers Observability - Astro Cache Hit 統計',
     `生成時間: ${nowTW()}`,
     `日期 (台灣時區): ${dateDash} 00:00:00 ~ 23:59:59`,
     `Worker: ${worker || '（不限）'}`,
-    `全天 Cache hit: ${totalHits} 次`,
+    `全天 Cache hit  SSR: ${totalSsrHits} 次  SSG: ${totalSsgHits} 次  合計: ${totalSsrHits + totalSsgHits} 次`,
     '='.repeat(64),
     '',
     '每小時明細 (台灣時區，只顯示有資料的小時):',
-    `${'時段'.padEnd(14)}${'hit'.padStart(6)}`,
-    '-'.repeat(20),
+    `${'時段'.padEnd(14)}${'ssr'.padStart(6)}${'ssg'.padStart(6)}`,
+    '-'.repeat(26),
   ];
 
   if (hourly.length === 0) {
     lines.push('• 無資料');
   } else {
-    hourly.forEach(({ hour, hitCount }) => {
-      lines.push(`${hour.padEnd(14)}${String(hitCount).padStart(6)}`);
+    hourly.forEach(({ hour, ssrHitCount, ssgHitCount }) => {
+      lines.push(`${hour.padEnd(14)}${String(ssrHitCount).padStart(6)}${String(ssgHitCount).padStart(6)}`);
     });
   }
 
@@ -389,7 +403,7 @@ async function main() {
   console.log(`Worker   : ${args.worker || '（不限）'}`);
   console.log('');
 
-  const { totalHits, hourly } = await fetchAllLogs(args.accountId, args.apiToken, dateDigits, args.worker);
+  const { totalSsrHits, totalSsgHits, hourly } = await fetchAllLogs(args.accountId, args.apiToken, dateDigits, args.worker);
 
   const outDir = args.output || path.join('./daily-analysis-result/cloudflare', dateDigits);
   if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
@@ -403,11 +417,13 @@ async function main() {
     account_id: args.accountId,
     date_tw: dateDash,
     worker: args.worker || null,
-    total_hits: totalHits,
+    total_ssr_hits: totalSsrHits,
+    total_ssg_hits: totalSsgHits,
+    total_hits: totalSsrHits + totalSsgHits,
     hourly,
   };
   fs.writeFileSync(jsonPath, JSON.stringify(jsonOutput, null, 2), 'utf8');
-  fs.writeFileSync(txtPath, buildReport(dateDigits, args.worker, totalHits, hourly), 'utf8');
+  fs.writeFileSync(txtPath, buildReport(dateDigits, args.worker, totalSsrHits, totalSsgHits, hourly), 'utf8');
 
   console.log('\n結果已儲存:');
   console.log(`• JSON : ${jsonPath}`);

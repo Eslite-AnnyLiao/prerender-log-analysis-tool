@@ -1,4 +1,86 @@
-# Analysis Log - Prerender Server Performance Analysis Tool
+# log-analysis-tool
+
+伺服器 log 下載與分析工具，涵蓋兩套流程：
+1. **Astro SSR / SSG**：從 Cloudflare 與 Datadog 下載 log，產出每日效能報告
+2. **Prerender**：從 Google Cloud Logging 下載 log，分析渲染效能
+
+---
+
+## Astro 每日 Log 分析
+
+### 環境設置
+
+```bash
+npm install
+cp .env.example .env   # 填入 Cloudflare 與 Datadog 的金鑰
+```
+
+`.env` 格式：
+
+```
+CLOUDFLARE_ACCOUNT_ID=...
+CLOUDFLARE_API_TOKEN=...
+DATADOG_API_KEY=...
+DATADOG_APP_KEY=...
+```
+
+### 日常使用
+
+```bash
+# 完整流程（下載 + 分析）
+node daily-pipeline.js --date 20260521
+
+# 只跑分析，跳過下載
+node daily-pipeline.js --date 20260521 --analyze-only
+
+# 指定環境（預設 prod）
+node daily-pipeline.js --date 20260521 --env stg
+```
+
+### 執行流程
+
+```
+Step 1  cloudflare-log-fetcher.js  ┐
+        datadog-log-fetcher.js     ┘ 同時下載
+
+Step 2  datadog-export-analyzer.js   產出 SSR / SSG / combined 報告
+
+Step 3  將 CF cache hit 數據寫入 combined JSON
+
+Step 4  將 404 統計寫入 combined JSON
+```
+
+輸出目錄（不存在時自動建立）：
+
+```
+to-analyze-daily-data/astro/
+├── ssg/          # SSG log CSV
+├── ssr/          # SSR log CSV
+└── 404-errors/   # 404 錯誤 CSV
+
+daily-analysis-result/astro/datadog-export/
+├── ssg/
+├── ssr/
+└── combined/
+```
+
+### 單獨執行子工具
+
+```bash
+# 下載
+node cloudflare-log-fetcher.js --date 20260521
+node datadog-log-fetcher.js --date 20260521
+
+# 分析（全部或單一類型）
+node datadog-export-analyzer.js --type all --date 20260521
+node datadog-export-analyzer.js --type ssg --date 20260521
+node datadog-export-analyzer.js --type ssr --date 20260521
+node datadog-export-analyzer.js --type combined --date 20260521
+```
+
+---
+
+## Prerender Log 分析
 
 A comprehensive tool for analyzing prerender server logs from Google Cloud Logging, focusing on render performance, user-agent statistics, and request patterns analysis. Features automatic Google Cloud authentication management for seamless operation.
 

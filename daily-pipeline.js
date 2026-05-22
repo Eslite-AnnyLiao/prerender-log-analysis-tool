@@ -20,11 +20,12 @@ const fs = require('fs');
 // ============================
 
 function parseArgs(argv) {
-  const args = { date: null, env: 'prod', debug: false };
+  const args = { date: null, env: 'prod', debug: false, analyzeOnly: false };
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === '--date' && argv[i + 1]) args.date = argv[++i];
     else if (argv[i] === '--env' && argv[i + 1]) args.env = argv[++i];
     else if (argv[i] === '--debug') args.debug = true;
+    else if (argv[i] === '--analyze-only') args.analyzeOnly = true;
   }
   return args;
 }
@@ -48,7 +49,7 @@ const BAR_W = 24;
 class ProgressDisplay {
   constructor() {
     this.cf       = { hours: 0, hits: 0, done: false, error: null };
-    this.dd       = { pages: 0, done: false, error: null };
+    this.dd       = { pages: 0, done: false, error: null, startTime: null };
     this.analyzer = { state: 'waiting', done: false, error: null };
 
     this._spinIdx = 0;
@@ -95,7 +96,13 @@ class ProgressDisplay {
     } else if (this.dd.done) {
       ddInfo = `\x1b[32m✓ 完成  共 ${this.dd.pages} 頁\x1b[0m`;
     } else {
-      ddInfo = `${sp}  下載中  已處理 ${this.dd.pages} 頁`;
+      let detail = `已處理 ${this.dd.pages} 頁`;
+      if (this.dd.startTime && this.dd.pages >= 2) {
+        const elapsedS = (Date.now() - this.dd.startTime) / 1000;
+        const avgS = (elapsedS / this.dd.pages).toFixed(1);
+        detail += `  ${avgS}s/頁  已耗時 ${Math.round(elapsedS)}s`;
+      }
+      ddInfo = `${sp}  下載中  ${detail}`;
     }
     process.stdout.write(`\r\x1b[K  \x1b[36mDatadog   \x1b[0m  ${ddInfo}\n`);
 
@@ -177,7 +184,10 @@ function parseCFLine(line, display) {
 
 function parseDDLine(line, display) {
   // 每頁請求：  第 N 頁...
-  if (/第\s*\d+\s*頁/.test(line)) display.dd.pages++;
+  if (/第\s*\d+\s*頁/.test(line)) {
+    if (!display.dd.startTime) display.dd.startTime = Date.now();
+    display.dd.pages++;
+  }
 }
 
 // ============================
@@ -349,42 +359,48 @@ async function main() {
   console.log(`  開始: ${nowTW()}`);
   console.log('='.repeat(64));
   console.log('');
-  console.log('▶ Step 1：下載 Cloudflare + Datadog log');
-  console.log('');
-
   const display = new ProgressDisplay();
-  display.start();
-
   const startTime = Date.now();
 
-  // CF fetcher
-  const cfPromise = runWithProgress(
-    'cloudflare-log-fetcher.js',
-    ['--date', dateDigits, ...envFlag, ...debugFlag],
-    (line) => parseCFLine(line, display),
-    'CF',
-  )
-    .then(() => { display.cf.done = true; })
-    .catch((err) => { display.cf.error = err.message.slice(0, 40); });
+  if (args.analyzeOnly) {
+    console.log('▶ 跳過 Step 1（--analyze-only 模式）');
+    display.cf.done = true;
+    display.dd.done = true;
+  } else {
+    console.log('▶ Step 1：下載 Cloudflare + Datadog log');
+    console.log('');
 
-  // DD fetcher
-  const ddPromise = runWithProgress(
-    'datadog-log-fetcher.js',
-    ['--date', dateDigits, ...envFlag, ...debugFlag],
-    (line) => parseDDLine(line, display),
-    'DD',
-  )
-    .then(() => { display.dd.done = true; })
-    .catch((err) => { display.dd.error = err.message.slice(0, 40); });
+    display.start();
 
-  // 等兩個下載都完成
-  await Promise.all([cfPromise, ddPromise]);
+    // CF fetcher
+    const cfPromise = runWithProgress(
+      'cloudflare-log-fetcher.js',
+      ['--date', dateDigits, ...envFlag, ...debugFlag],
+      (line) => parseCFLine(line, display),
+      'CF',
+    )
+      .then(() => { display.cf.done = true; })
+      .catch((err) => { display.cf.error = err.message.slice(0, 40); });
 
-  if (display.dd.error) {
-    display.finalize();
-    console.log('\nDatadog log 下載失敗，無法執行分析。');
-    printSummary(dateDigits, !display.cf.error, false, false);
-    process.exit(1);
+    // DD fetcher
+    const ddPromise = runWithProgress(
+      'datadog-log-fetcher.js',
+      ['--date', dateDigits, ...envFlag, ...debugFlag],
+      (line) => parseDDLine(line, display),
+      'DD',
+    )
+      .then(() => { display.dd.done = true; })
+      .catch((err) => { display.dd.error = err.message.slice(0, 40); });
+
+    // 等兩個下載都完成
+    await Promise.all([cfPromise, ddPromise]);
+
+    if (display.dd.error) {
+      display.finalize();
+      console.log('\nDatadog log 下載失敗，無法執行分析。');
+      printSummary(dateDigits, !display.cf.error, false, false);
+      process.exit(1);
+    }
   }
 
   // Step 2: Analyzer

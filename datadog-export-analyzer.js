@@ -238,6 +238,29 @@ function calcRenderStats(renderItems) {
     };
 }
 
+function calcHourlyRenderStats(renderItems) {
+    const byHour = {};
+    for (const { ms, date } of renderItems) {
+        const hr = hourLabel(date);
+        if (!hr) continue;
+        if (!byHour[hr]) byHour[hr] = [];
+        byHour[hr].push(ms);
+    }
+    const result = {};
+    for (const [hr, msArr] of Object.entries(byHour).sort((a, b) => a[0].localeCompare(b[0]))) {
+        const sorted = [...msArr].sort((a, b) => a - b);
+        const sum = sorted.reduce((s, v) => s + v, 0);
+        result[hr] = {
+            count: sorted.length,
+            avg_ms: Math.round(sum / sorted.length * 10) / 10,
+            p50_ms: Math.round(pct(sorted, 50)),
+            p95_ms: Math.round(pct(sorted, 95)),
+            p99_ms: Math.round(pct(sorted, 99) * 10) / 10,
+        };
+    }
+    return result;
+}
+
 function calcMinuteStats(minuteCount) {
     const entries = Object.entries(minuteCount).filter(([k]) => k);
     if (!entries.length) return { max: 0, min: 0, avg: 0, total: 0, sorted: [] };
@@ -295,12 +318,12 @@ function calcHighFreq(uaMinutely, uaSecondly) {
 
     Object.entries(uaMinutely).forEach(([min, uas]) => {
         Object.entries(uas).forEach(([ua, count]) => {
-            if (count > 2) { minVio.push({ min, ua, count }); violatingUA.add(ua); }
+            if (count > 20) { minVio.push({ min, ua, count }); violatingUA.add(ua); }
         });
     });
     Object.entries(uaSecondly).forEach(([sec, uas]) => {
         Object.entries(uas).forEach(([ua, count]) => {
-            if (count > 2) { secVio.push({ sec, ua, count }); violatingUA.add(ua); }
+            if (count > 5) { secVio.push({ sec, ua, count }); violatingUA.add(ua); }
         });
     });
 
@@ -441,8 +464,8 @@ function appendCommonSections(lines, records, agg, computed, type) {
     lines.push('高頻訪問模式分析:');
     lines.push('='.repeat(48));
     lines.push('📊 高頻訪問整體統計:');
-    lines.push(`• 一分鐘內 >2次 筆數: ${hf.totalMinVio}`);
-    lines.push(`• 一秒內 >2次 筆數: ${hf.totalSecVio}`);
+    lines.push(`• 一分鐘內 >20次 筆數: ${hf.totalMinVio}`);
+    lines.push(`• 一秒內 >5次 筆數: ${hf.totalSecVio}`);
     lines.push(`• 涉及 UserAgent 種數: ${hf.uniqueViolatingUA}`);
     lines.push('');
     lines.push('🚨 一分鐘內訪問大於2次的 UserAgent (前10名):');
@@ -755,8 +778,8 @@ function generateCombinedReport(dateDigits, ssgFile, ssrFile, ssgRecords, ssrRec
     lines.push('高頻訪問模式分析 (合計):');
     lines.push('='.repeat(48));
     lines.push('📊 高頻訪問整體統計:');
-    lines.push(`• 一分鐘內 >2次 筆數: ${hf.totalMinVio}`);
-    lines.push(`• 一秒內 >2次 筆數: ${hf.totalSecVio}`);
+    lines.push(`• 一分鐘內 >20次 筆數: ${hf.totalMinVio}`);
+    lines.push(`• 一秒內 >5次 筆數: ${hf.totalSecVio}`);
     lines.push(`• 涉及 UserAgent 種數: ${hf.uniqueViolatingUA}`);
     lines.push('');
     lines.push('🚨 一分鐘內訪問大於2次的 UserAgent (前10名):');
@@ -920,6 +943,8 @@ function buildJsonOutput(type, inputFile, records, agg, computed) {
         hourly_request_data: hourCount,
 
         minutely_request_data: minuteCount,
+
+        hourly_render_time_stats: type === 'ssr' ? calcHourlyRenderStats(agg.renderItems) : undefined,
 
         slow_render_periods: type === 'ssr'
             ? slowItems.map(r => ({

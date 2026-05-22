@@ -13,16 +13,17 @@
 //
 // API: POST https://api.us5.datadoghq.com/api/v2/logs/events/search
 
+require('dotenv').config();
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
 
 // ============================
-// 固定設定（依實際環境填入）
+// 固定設定（從環境變數讀取，請建立 .env 並填入）
 // ============================
 
-const DATADOG_API_KEY = 'DD_API_KEY_REMOVED';
-const DATADOG_APP_KEY = 'DD_APP_KEY_REMOVED';
+const DATADOG_API_KEY = process.env.DATADOG_API_KEY;
+const DATADOG_APP_KEY = process.env.DATADOG_APP_KEY;
 const WORKER_PRD = 'astro-worker-prd';
 const WORKER_STG = 'astro-worker-stg';
 const DATADOG_SITE = 'api.us5.datadoghq.com';

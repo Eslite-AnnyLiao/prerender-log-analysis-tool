@@ -16,16 +16,17 @@
 //
 // API: POST /accounts/{id}/workers/observability/telemetry/query
 
+require('dotenv').config();
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
 
 // ============================
-// 固定設定（依實際環境填入）
+// 固定設定（從環境變數讀取，請建立 .env 並填入）
 // ============================
 
-const CLOUDFLARE_ACCOUNT_ID = 'CF_ACCOUNT_ID_REMOVED';
-const CLOUDFLARE_API_TOKEN = 'CF_API_TOKEN_REMOVED';
+const CLOUDFLARE_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
+const CLOUDFLARE_API_TOKEN  = process.env.CLOUDFLARE_API_TOKEN;
 const CLOUDFLARE_WORKER_NAME = 'www-eslite-com';
 
 const ENV_WORKER_MAP = {

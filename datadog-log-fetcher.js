@@ -216,6 +216,13 @@ async function fetchLogsPage(apiKey, appKey, params, retries = 0) {
     return fetchLogsPage(apiKey, appKey, params, retries + 1);
   }
 
+  if (res.status === 500) {
+    if (retries >= MAX_RETRIES) throw new Error(`HTTP 500: ${res.body.slice(0, 500)}`);
+    console.log(`  [500 Server Error] 30s 後重試 (${retries + 1}/${MAX_RETRIES})...`);
+    await sleep(30_000);
+    return fetchLogsPage(apiKey, appKey, params, retries + 1);
+  }
+
   if (res.status !== 200) {
     throw new Error(`HTTP ${res.status}: ${res.body.slice(0, 500)}`);
   }
@@ -245,7 +252,7 @@ async function fetchAllLogs(apiKey, appKey, query, fromISO, toISO, label) {
   while (true) {
     const params = {
       filter: { query, from: fromISO, to: toISO },
-      sort: 'timestamp',
+      sort: '-timestamp',
       page: { limit: PAGE_LIMIT, ...(cursor ? { cursor } : {}) },
     };
 

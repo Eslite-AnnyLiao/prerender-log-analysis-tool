@@ -210,9 +210,11 @@ async function fetchLogsPage(apiKey, appKey, params, retries = 0) {
 
   if (res.status === 429) {
     if (retries >= MAX_RETRIES) throw new Error('Rate limit (429) 超過最大重試次數');
-    const retryAfterSec = parseInt(res.headers['retry-after'] || '60', 10);
-    console.log(`  [429 Rate Limited] 等待 ${retryAfterSec}s 後重試 (${retries + 1}/${MAX_RETRIES})...`);
-    await sleep(retryAfterSec * 1000);
+    // 此 endpoint 不會回 retry-after，改用 x-ratelimit-reset（秒）
+    const resetSec = parseInt(res.headers['x-ratelimit-reset'] || res.headers['retry-after'] || '10', 10);
+    const waitSec = resetSec + 1;
+    console.log(`  [429 Rate Limited] 等待 ${waitSec}s 後重試 (${retries + 1}/${MAX_RETRIES})...`);
+    await sleep(waitSec * 1000);
     return fetchLogsPage(apiKey, appKey, params, retries + 1);
   }
 
@@ -234,7 +236,23 @@ async function fetchLogsPage(apiKey, appKey, params, retries = 0) {
     throw new Error(`無法解析回應 JSON: ${res.body.slice(0, 200)}`);
   }
 
-  return parsed;
+  return { parsed, headers: res.headers };
+}
+
+// 依 x-ratelimit-remaining / x-ratelimit-reset 自適應節流，貼著官方限制跑
+// （Search API 限制為 2 requests / 10s，配額用盡才等到 reset，否則立即送下一頁）
+async function throttleByRateLimit(headers) {
+  const remaining = parseInt(headers['x-ratelimit-remaining'], 10);
+  const resetSec = parseInt(headers['x-ratelimit-reset'], 10);
+  if (Number.isNaN(remaining) || Number.isNaN(resetSec)) {
+    await sleep(2000); // 沒有 rate limit header 時的保守 fallback
+    return;
+  }
+  if (remaining > 0) {
+    await sleep(300); // 還有配額，留一點緩衝避免時鐘誤差
+  } else {
+    await sleep((resetSec + 1) * 1000);
+  }
 }
 
 // ============================
@@ -257,7 +275,7 @@ async function fetchAllLogs(apiKey, appKey, query, fromISO, toISO, label) {
     };
 
     process.stdout.write(`  第 ${page} 頁...`);
-    const result = await fetchLogsPage(apiKey, appKey, params);
+    const { parsed: result, headers } = await fetchLogsPage(apiKey, appKey, params);
 
     const data = result.data || [];
 
@@ -275,7 +293,7 @@ async function fetchAllLogs(apiKey, appKey, query, fromISO, toISO, label) {
 
     cursor = nextCursor;
     page++;
-    await sleep(2000);
+    await throttleByRateLimit(headers);
   }
 
   console.log(`  共 ${allLogs.length} 筆\n`);

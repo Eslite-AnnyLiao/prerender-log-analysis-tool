@@ -5,11 +5,15 @@
 // 用法:
 //   node daily-pipeline.js --date <YYYYMMDD>
 //   node daily-pipeline.js --date <YYYY-MM-DD> [--debug]
+//   node daily-pipeline.js --date <YYYYMMDD> --merge-cf-only
 //
 // 流程:
 //   Step 1  CF fetcher + DD fetcher 同時執行（顯示進度條）
 //   Step 2  兩者完成後執行 datadog-export-analyzer（--type all）
 //   Step 3  將 CF cache hit 數據 merge 進 combined JSON
+//
+// --merge-cf-only: 跳過 Step 1、Step 2，直接將既有的 CF JSON merge 進既有的 combined JSON
+//                   （需先確保兩個檔案都已存在，例如先單跑過 cloudflare-log-fetcher.js）
 
 const { spawn } = require('child_process');
 const path = require('path');
@@ -20,12 +24,13 @@ const fs = require('fs');
 // ============================
 
 function parseArgs(argv) {
-  const args = { date: null, env: 'prod', debug: false, analyzeOnly: false };
+  const args = { date: null, env: 'prod', debug: false, analyzeOnly: false, mergeCfOnly: false };
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === '--date' && argv[i + 1]) args.date = argv[++i];
     else if (argv[i] === '--env' && argv[i + 1]) args.env = argv[++i];
     else if (argv[i] === '--debug') args.debug = true;
     else if (argv[i] === '--analyze-only') args.analyzeOnly = true;
+    else if (argv[i] === '--merge-cf-only') args.mergeCfOnly = true;
   }
   return args;
 }
@@ -350,6 +355,14 @@ async function main() {
   const dateDash = `${dateDigits.slice(0, 4)}-${dateDigits.slice(4, 6)}-${dateDigits.slice(6, 8)}`;
   const debugFlag = args.debug ? ['--debug'] : [];
   const envFlag = ['--env', args.env];
+
+  if (args.mergeCfOnly) {
+    console.log(`▶ --merge-cf-only：將既有 CF JSON merge 進 combined JSON（日期 ${dateDash}）`);
+    const merged = mergeCFIntoCombined(dateDigits);
+    if (!merged) process.exit(1);
+    console.log('  \x1b[32m✓\x1b[0m  CF cache hit 數據已寫入');
+    return;
+  }
 
   console.log('');
   console.log('='.repeat(64));
